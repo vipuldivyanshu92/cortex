@@ -1,0 +1,43 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>Client</title>
+
+	<script src="ajax.js" ></script>
+
+	<script>
+		function load() {
+			port = document.getElementById('port').value;
+			document.getElementById('client').src = "http://localhost:" + port + "/client.html";
+		}
+		
+		function isLoaded() {
+			if(document.getElementById('cortex').isActive())
+			{
+				load();
+				clearInterval();
+			}
+		}
+		
+		
+	
+	</script>
+</head>
+<body>
+
+
+		<input type="button" value="Load" onClick="load()" />
+		<input id="port" size="4" value="2600" />
+
+	<applet code="Cortex.class" archive="Cortex.jar" width="50" height="50" id="cortex"></applet>
+	<b>Coretex Client</b><br/>
+
+	<iframe height="400" width="600" id="client" name="client">
+		
+	</iframe>	
+	
+</body>
+</html>
+		
+	   
+

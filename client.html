@@ -1,0 +1,1973 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>Client</title>
+	
+	<style type="text/css">
+		.page {
+			visibility: hidden;
+			position: absolute;
+			top: 40px;
+			left: 10px;
+			border: 1px solid black;
+			padding: 5px;
+			width: 550px;
+		}
+		
+		td, th {
+			border: 1px solid black;
+			margin: 0px;
+		}
+		
+		tr {
+			padding: 0px;
+			margin: 0px;
+		}
+		
+		table {
+			padding: 0px;
+			border: 1px solid black;
+		}
+			
+	</style>
+	
+	<script src="ajax.js" ></script>
+	
+	<script>
+
+var localNodeAddr = '';
+var originURL = 'Unknown Source';
+var connected = false;
+var numberOfNodes = 0;
+var connections = new Array();	
+
+var tests = new Array();
+var testLocks = new Array();
+var lockTrys = new Array();
+var myLocks = new Array();
+var runningTests = new Array();
+
+var rangeLocks = new Array();
+
+var finalResults = new Array();
+var doneStage = 0;
+
+var runTry = null;
+
+var dlc = 0; 
+var msgQ = new Array();
+
+function error(msg) {
+	log("ERROR: " + msg);
+	alert("ERROR: " + msg);
+	clearInterval(cronID);
+}
+
+/* basic ping function for local node
+ *  if successful, 
+ *    if we haven't greeted the server, we do, 
+ *    otherwise nothing (just a heartbeat)
+ *  if it fails, lets the user know we have lost 
+ *    connection to the node server
+ */
+function ping() {
+	var http = ajaxConnect();
+	
+	var retfn = returnfn(http,
+		function(resp) {
+			if (!connected) {
+				connected = true;
+				greet();
+			}
+		},
+		function(resp) {
+			connected = false;
+			var html = "Connection to local Node failed.  Try reloading from <a href=\"" + originURL + "\" target=\"window\">" + originURL + "</a>";
+			document.getElementById('statusLabel').innerHTML = html;	
+			
+		}
+
+	);			
+		
+	ajaxSend(http, "cmd=ping\n\n", retfn);
+}
+
+/*  Greets the server
+ *    so far just gets the server's IP and origin URL
+ */
+function greet() {
+	var http = ajaxConnect();
+	
+	var retfn = returnfn(http, 
+		function(resp) {
+			var arr = resp.split(" ");
+			localNodeAddr = arr[0];
+			originURL = arr[1];
+			document.getElementById('statusLabel').innerHTML = "I am <b>" + localNodeAddr + "</b>";
+			init();
+		}
+	);
+	ajaxSend(http, "cmd=greet\n\n", retfn);
+}
+
+function killServer() {
+	announceDead(localNodeAddr);
+	var http = ajaxConnect();
+	
+	var retfn = returnfn(http,
+		function(resp) {
+			// got a resp, server not dead
+			killServer();
+		});
+	ajaxSend(http, "cmd=kill\n\n", retfn);
+}
+
+function getLog() {
+	var http = ajaxConnect();
+
+
+	var retfn = returnfn(http,
+		function(resp) {
+			var log = document.getElementById('log');
+			//alert("getLog() resp: " + resp);
+			log.value =  resp + log.value;
+		});
+	ajaxSend(http, "cmd=getLog\n\n", retfn);
+}
+
+// two digits
+function d2(str) {
+	if (str <10)
+		return "0"+str;
+	else
+		return str;
+}
+
+function getTime() {
+	var date = new Date();
+	return d2(date.getHours()) + ":" + d2(date.getMinutes()) + ":" + d2(date.getSeconds())
+}
+
+var logCheckElem = null;
+function log(str) {
+	if (logCheckElem == null)
+		logCheckElem = document.getElementById("logCheck");
+	if (logCheckElem.checked == true) {
+		str =  getTime() + ": " + str+"\n";
+		var log = document.getElementById('log');
+		log.value =  str + log.value;
+	}
+}
+
+function log2(str) {
+	str =  getTime() + ": " + str+"\n";
+	var log = document.getElementById('log');
+	log.value =  str + log.value;
+}
+
+function getMsgs() {
+	var http = ajaxConnect();
+	var retfn = returnfn(http, 
+		function(resp) {
+			//log("getMsgs: len > 0");
+			queueMsgs(resp);
+		});
+	ajaxSend(http, "cmd=getMsgs\n\n", retfn);
+}
+
+function connectedTo(addr) {
+	if (addr == localNodeAddr)
+		return true;
+	for(i = 0; i < connections.length; i++) {
+		if (connections[i] == addr) 
+			return true;
+	}
+	return false;
+}
+
+function addConnection(addr) {
+	if(!connectedTo(addr)) {
+		connections[connections.length] = addr;
+		numberOfNodes++;
+		return true;
+	} else
+		return false;
+}
+
+function genNodeList() { 
+	var str = "";//localNodeAddr+",";
+	for (var i =0; i < connections.length; i++) {
+		str += connections[i] + ",";
+	}
+	if (connections.length > 0)
+		str = str.substring(0,str.length-1);
+	return str;
+}
+
+function advertiseNewNode(addr) {
+	var m = new Object();
+	m['query'] = "newNode";
+	m['addr'] = addr;
+	bcastMsg(m);
+}
+
+function announceDead(addr) {
+	var m = new Object();
+	m['query'] = "deadNode";
+	m['addr'] = addr;
+	bcastMsg(m);
+}
+
+function handleNewNode(resp, welcome) {
+
+	if (welcome == null)
+		welcome = false;
+	var addr = resp.addr;
+	//log2("handle new node " + addr + " from " + resp.origin);
+	
+	// handles re adding if reloaded html
+	//if (!connectedTo(addr))
+	//{
+	var ret = genNodeList();
+	var n = addConnection(addr);
+	if (welcome == true) {
+		sendDLC(addr);
+		sendWelcome(ret, addr);	
+		sendLocks(addr);
+		sendTests(addr);
+	}
+	if (n == true) {
+		sendReqs(addr);
+		advertiseNewNode(addr);
+	}
+	
+	
+}
+
+function sendDLC(addr) {
+	var m = new Object();
+	m.query = "DLC";
+	sendMsg(m, addr);
+}
+
+function sendReqs(addr) {
+	for(i in lockTrys) {
+		var lock = lockTrys[i];
+		if (lock == null)
+			continue;
+			
+		var m = new Object();
+		m["query"] = "getLock";
+		m["type"] = i;
+		m["name"] = lock["name"];
+		m["time"] = lock.time;
+		m["addr"] = localNodeAddr;
+		if (i == "range") {
+			m["start"] = lock.start;
+			m["end"] = lock.end;
+		}
+		sendMsg(m, addr);
+	}
+}
+
+function sendWelcome(addrList, addr) {
+	var m = new Object();
+	m["query"] = "welcome";
+	m["addrList"] = addrList;
+	sendMsg(m, addr);
+}
+
+function sendLocks(addr) {
+	for (var i in testLocks) {
+		log ("testLog[" + i + "]");
+		var l = testLocks[i];
+		var m = new Object();
+		
+		m["query"] = "addLock";
+		m["type"] = "test";
+		m["name"] = l["name"];
+		m["addr"] = l["addr"];
+		m["locked"] = l["locked"];
+		m["perjob"] =
+		
+			
+		m["time"] = l["time"];
+		if (l.running) {
+			m["running"] = true;
+			m["min"] = l["min"];
+			m["max"] = l["max"];
+			m["perjob"] = l["perjob"];
+		}
+		sendMsg(m, addr);
+	}
+	for (var i in rangeLocks) {
+		var r = rangeLocks[i];
+		while(r) {
+			log("rangeLock[" + i +" [" + r.start + "-" + r.end +"]]");
+			var m = new Object();
+			m["query"] = "addLock";
+			m["type"] = "range";
+			m["name"] = i;
+			m["addr"] = r["addr"]
+			m["locked"] = r["locked"];
+			m["start"] = r["start"];
+			m["end"] = r["end"];
+			m["done"] = r["done"];
+			if (r['results'])
+				m["results"] = r["results"];
+			
+			sendMsg(m, addr);
+			r = r.next;
+		}
+	}
+}
+
+function sendTests(addr) {
+	for(var i in tests) {
+		var m = makeTestMsg(name);
+		sendMsg(m, addr);
+	}
+}
+
+function handleAddLock(resp) {
+	if(resp['locked'] == null) 
+			resp['locked'] = false;
+	// dont add/overwrite if exists?		
+	var lock = retrieveLock(resp);
+		
+	if (resp['type'] == "test" ) {//&& (lock == null || lock.addr == null)) {
+		var locks = getLockType(resp['type']);
+		
+		
+		locks[resp['name']] = resp
+		if(resp['running'] == true) {
+			runningTests.push(resp['name']);
+		}
+	} else if(resp['type'] == "range" && lock.addr == null) {
+		log("Add range lock: " + resp['name'] + " (" + resp['start'] + " to " + resp['end'] + ") : ");
+		var lock = getRangeLock(resp['name'], resp['start'], resp['end']);
+		
+		lock.addr = resp['addr'];
+		lock.locked = resp['locked'];
+		lock.done = resp['done'];
+		lock.results = resp['results'];
+		lock.name = resp['name'];
+	}
+}
+
+function packArray(arr) {
+	if (arr instanceof Object) {
+		var str = "{";
+		for(var i in arr) {
+			str += i +":" + packArray(arr[i]) + ",";
+		}
+		str += "}";
+		return str;
+	
+	} else {
+		if (arr == null)
+			return "";
+		return arr.toString();
+	}
+}
+
+function unpackArray(str) {
+	if (str[0] == "{") {
+		var arr = new Object();
+		//log2(str);
+		str = str.substring(1,str.length-1);
+		//log2(str);
+		var parts = str.split(",");
+		for (var i=0; i < parts.length;i++) {
+			if (parts[i] == "")
+				continue;
+			var iparts = parts[i].split(":");
+			arr[iparts[0]] = iparts[1];
+		}
+		return arr;
+	} else if (str == "true") 
+		return true;
+	else if (str == "false")
+		return false;
+	else 
+		return Number(str);
+
+}
+
+function unpackResults(str) {
+	log('UNPACK: "' + str + '"');
+	var arr = new Array();
+	var parts = str.split(", ");
+	for(var i =0; i<parts.length; i++) {
+		log(parts[i]);
+		if (parts[i] == "")
+			continue;
+		var iparts = parts[i].split("=", 2);
+		log(iparts[0] + " AND " + iparts[1]);
+		var item = new Object();
+		item.key= Number(iparts[0]);
+		item.value =unpackArray(iparts[1]);
+		arr.push(item);
+	}
+	return arr;
+}
+
+function packResults(res) {
+	str = '';
+	if (res == null)
+		return "";
+	for (var i=0; i<res.length; i++) {
+		str += res[i].key + "=" + packArray(res[i].value);
+		if (i < res.length-1)
+			str+= ", ";
+		
+	}
+	return str;
+}
+
+function packObject(m, defaultValue) {
+	
+	var str = "";
+	for (var i in m) {
+		if (m[i] == '')
+		{
+			if (defaultValue == null) {
+				continue;
+			} else {
+				m[i] = defaultValue;
+			}
+		}
+		if (i == "results") {
+			str += i + "=" + packResults(m[i]) + "\n";
+		} else {
+			str += i + "=" + m[i] + "\n";
+		}
+	}
+	return str;
+}
+
+function removeNodeRangeLocks(addr) {
+	for(var i in rangeLocks) {
+		log("freeing " + i + " locks");
+		var rlock = rangeLocks[i];
+		while (rlock != null) {
+			log("looking at " + i + " (" + rlock.start + " to " + rlock.end + ") : " + rlock.addr);
+			if (rlock.addr == addr) {
+				log("unlocking");
+				rlock.locked = false;
+			}
+			rlock = rlock.next;
+		}
+	}
+}
+
+function disconnect(addr) {
+	log("--------------DISCONNECT " + addr + "----------");
+	// remove from connections list
+	for (var i=0; i < connections.length; i++) {
+		if (connections[i] == addr) {
+			connections.splice(i,1);
+			numberOfNodes--;
+			break;
+		}
+	}
+	// remove locks
+	// test locks
+	for(var i in testLocks) {
+		var lock = testLocks[i];
+		if (!lock)
+			continue;
+		if (lock.addr == addr) {
+			lock.locked = false;
+		}
+	}
+	//  range locks
+	removeNodeRangeLocks(addr);
+
+	log("disconnect: freeing range locks");
+	
+	
+}
+
+function sendMsg(m, addr, time, mtype) {
+	if(time == null) 
+		time = dlc;
+	if(mtype == null)
+		mtype = "single";
+
+	var str = "cmd=sendMsg\n";
+	str += "origin=" + localNodeAddr + "\n";
+	str += "dlc=" + time + "\n";
+	str += "mtype=" + mtype + "\n";
+	
+	str += packObject(m);
+	
+	str += "\n";
+	log ("SEND: " + str);
+	
+	var http = ajaxConnect();
+	var retfn = returnfn(http, null,
+		function() {
+			disconnect(addr);
+			announceDead(addr);
+			log("ERROR> message to " + addr + " not delivered: '" + str + "'");
+		});
+		
+	ajaxSend(http, str, retfn, addr);
+}
+
+function bcastMsg(m) {
+	if (m.query != "heartBeat")
+		dlc ++;
+	//log("BCAST conLen: " + connections.length);
+	for(var i=0; i < connections.length; i++) {
+		log("bcast "+ i +" " + m.query + " to " + connections[i] + " dlc:" + dlc);
+		sendMsg(m, connections[i], dlc, "bcast");
+		//log("back from sendMsg, i:" + i + " conlen:" + connections.length);
+	}
+
+}
+
+function encodeStr(str) {
+	var res="";
+	for(i=0; i<str.length;i++) {
+		if(str[i] == "$")
+			res += "$$";
+		else if(str[i] == "\n")
+			res += "$n";
+		else if(str[i] == "\r")
+			res += "$r";
+		else if(str[i] == "=")
+			res += "$e"
+		else
+			res += str[i];
+	}
+	return res;
+}
+
+function decodeStr(str) {
+	var res = "";
+	if (!str)
+		return "";
+	for(i=0; i<str.length; i++) {
+		if(str[i] == "$") {
+			i++;
+			if(str[i] == "$")
+				res += "$";
+			else if(str[i] == "n")
+				res += "\n";
+			else if(str[i] == "r")
+				res += "\r";
+			else if(str[i] == "e")
+				res += "=";
+		} else
+			res += str[i];
+	}	
+	return res;
+}
+
+function addMsg(resp) {
+	//log("addMsg mdlc: " + resp.dlc + " mqlen: " + msgQ.length + " type:" + resp.mtype + " query: " + resp.query);
+	for(var i=msgQ.length-1; i>=0; i--) {
+		//log("resp.dlc:" + resp.dlc + " msgQ[i].dlc:" + msgQ[i].dlc);
+		if (resp.dlc > msgQ[i].dlc) {
+			//log("moving " + i + " to " + (i+1));
+			msgQ[i+1] = msgQ[i];
+		} else {
+			//log("first, moving " + i + " to " + (i+1));
+			//msgQ[i+1] = msgQ[i];
+			//log("putting msg in " + i + " + 1, RETURN");
+			msgQ[i+1] = resp;
+			return;
+		}
+	}
+	//log("END: putting msg in 0");
+	msgQ[0] = resp;
+}
+
+function queueMsgs(mstr) {
+	log("GOT messages: " + mstr);
+	var resps = mstr.split("\n\n");
+	for(var rcount=0; rcount < resps.length; rcount++) {
+		var resp = resps[rcount];
+		if (resp == "") 
+			continue;
+		resp = parseResp(resp);
+		if (resp.query == "DLC") {
+			dlc = resp.dlc;
+			//var m = new Object();
+			//m.query = "DLC";
+			//bcastMsg(m);
+		} else {
+			addMsg(resp);
+		}
+	}
+	var s = "QUEUE: "
+	for (var i =0; i< msgQ.length; i++) {
+		s += msgQ[i].dlc + " ";
+	}
+	log(s);
+	log("mqlen:" + msgQ.length);
+	while (msgQ.length>0 && ((msgQ[msgQ.length-1].dlc - 1) <= dlc)) {
+		var r = msgQ.pop();
+		log("mdlc: " + r.dlc + " dlc: " + dlc + " mqlen: " + msgQ.length + " type:" + r.mtype + " query: " + r.query);
+		if (r.mtype == "bcast")
+			dlc = r.dlc
+		processMsg(r);
+	}
+			
+}
+
+function processMsg(resp) {
+	if (resp["query"] == "join_network") {
+		log("Message join_network received");
+		handleNewNode(resp, true);
+	} else 	if (resp["query"] == "welcome") {
+		handleWelcome(resp);
+	} else if (resp["query"] == "newNode") {
+		//addConnection(resp["addr"]);
+		handleNewNode(resp, false);
+	} else if (resp["query"] == "deadNode") {
+		disconnect(resp["addr"]);
+	} else if(resp["query"] == "addLock") {
+		handleAddLock(resp);
+	} else if (resp["query"] == "getLock") {
+		handleLockReq(resp);
+	} else if (resp["query"] == "lockResp") {
+		handleLockResp(resp);
+	} else if (resp["query"] == "releaseLock") {
+		handleLockRelease(resp);
+	} else if(resp["query"] == "testUpdate") {
+		handleTestUpdate(resp);
+	} else if(resp["query"] == "activateJob") {
+		handleActivateJob(resp);
+	} else if(resp["query"] == "results") {
+		handleResults(resp);
+	} else if(resp["query"] == "new_network") {
+		join_network(resp["addr"], false);
+	} else if(resp["query"] == "heartBeat") {
+		// do nothing;
+		return;
+	} else {
+		log("Error: Unkown message '" + resp["query"] + "' received from " + resp["origin"]);
+	}
+}
+	
+function handleWelcome(resp) {
+	log("Welcome message received");
+	//var myNodes = genNodeList();
+	addConnection(resp['origin']);
+	if (resp['addrList']){
+		var nodes = resp['addrList'].split(",");
+		for(var i=0; i < nodes.length; i++){	
+			addConnection(nodes[i]);
+		}
+	}
+	
+	for(var i =0; i< connections.length; i++) {
+		var addr = connections[i];
+		if (addr == localNodeAddr)
+			continue;
+		
+		advertiseNewNode(addr);
+	}
+}	
+	
+function extractHost(url) {
+	//  http: or file:
+	var host = url.substr(5);
+	while (host.charAt(0) == '/')
+		host = host.substr(1);
+	var end = host.indexOf('/');
+	
+	if (end > 0 ) 
+		host = host.substr(0, end);
+	return host;
+
+}
+
+
+function setStatus() {
+	document.getElementById('numberOfNodes').innerHTML = "Number of nodes: " + numberOfNodes;
+	document.getElementById('connections').innerHTML = "Connected to: " + genNodeList();
+	document.getElementById('dlc').innerHTML = "DLC: " + dlc;
+}
+
+function init() { 
+	if (connected == false)
+		return;
+	numberOfNodes = 1;
+	if (originURL.substr(0, 4) == "file") {
+		// we are the first
+		//numberOfNodes = 1; // ourself
+		log("Loaded from file");
+		// now we sit and wait
+	} else { // it was http, so we were loaded from another node
+		log("Loaded from " + originURL);
+		originAddress = extractHost(originURL);
+		
+		join_network(originAddress);
+	}
+		    
+}
+
+function parseResp(resp) {
+	var lines = resp.split("\n");
+	var arr = [];
+	for(var i=0; i < lines.length; i++) {
+		//var kv = lines[i].split("=");
+		var mid = lines[i].indexOf("=");
+		var kv = new Array();
+		kv[0] = lines[i].substring(0, mid);
+		kv[1] = lines[i].substring(mid+1);
+		if (kv[1] == "true")
+			kv[1] = true;
+		else if(kv[0] == "false")
+			kv[1] = false;
+		else if (kv[0] == "dlc" ||
+			kv[0] == "start" ||
+			kv[0] == "end" ||
+			kv[0] == "min" ||
+			kv[0] == "max") 
+			kv[1] = Number(kv[1]);
+		else if (kv[0] == "results")
+			kv[1] = unpackResults(kv[1]);
+		arr[kv[0]] = kv[1];
+	}
+	return arr;
+}
+
+
+function join_network(address, bcast) {
+	if(bcast == null) {
+		bcast = true;
+	}
+	log("join_network -> " + address);
+	var m = new Object();
+	m["query"] = "join_network";
+	m["addr"] = localNodeAddr;
+	//m["nodes"] = genNodeList();
+	sendMsg(m, address);
+	if (bcast == true) {
+		m = new Object();
+		m["query"] = "new_network";
+		m["addr"] = address;	
+		bcastMsg(m);
+	}
+}
+
+
+	
+var runCount = 0;
+var workMod = 1;
+var maxWorkChange = 10;
+
+// every 100 milisseconds
+function cron() {
+	if (connected == false)
+		return;
+		
+	
+	if(runCount % workMod == 0)	{
+		
+		var dateObj = new Date();
+		var workStart = dateObj.getTime();
+		
+			
+		doWork();
+		dateObj = new Date();
+		var workEnd = dateObj.getTime();
+		
+		
+		if (isWorking == true) {
+			var newWorkMod = Math.abs(workEnd-workStart+1);
+			//log2("newWorkMod: " + newWorkMod);
+			if (newWorkMod - workMod > maxWorkChange) {
+				workMod = workMod + maxWorkChange;
+			} else if(workMod - newWorkMod > maxWorkChange){
+				workMod = Math.abs(workMod - maxWorkChange);
+			} else {
+				workMod = newWorkMod;
+			}
+		} else {
+			workMod = 10;
+		}
+		//log("workMod: " + workMod + " start: " + workStart + " end: " + workEnd + " delta: " + (workEnd-workStart));
+		//log("workPos: " + workMapPos + " workMod: " + workMod + " delta: " + (workEnd-workStart));
+		//log("workMod: " + workMod);
+		// map or reduce
+		//var lock = myLocks["range"];
+		//if (workMapPos <= lock.end) 
+		
+	}
+	
+	if (runCount % 5 == 0) {
+		getMsgs();
+	}
+	
+	// once a second
+	if (runCount % 10 == 0) {
+		ping();
+		getLog();
+		setStatus();
+		checkLocks();
+		updateTestsStatus();
+		if ( doneStage == 1 ) {
+			updateFinalResults();
+		
+		}
+	}
+	
+	if (runCount % 20 == 0) {
+		lookForWork();
+	}
+	
+	if (runCount % 40 == 0) {
+		updateJobsList();
+	}
+	
+	if (runCount % 20 == 0)
+		updateResults();
+		
+	if (runCount % 300 == 0)
+		heartBeat();	
+	
+	// 180 seconds, or 3 minutes
+	if (runCount == 1800)
+		runCount = 0;
+	runCount++;
+}
+
+function heartBeat() {
+	var m = new Object();
+	m.query = "heartBeat";
+	bcastMsg(m);
+}
+
+function reloadHTML() {
+	var http = ajaxConnect();
+	var retfn = returnfn(http);
+	ajaxSend(http, "cmd=reloadHTML\n\n",retfn);
+}
+
+function poke() {
+	var http = ajaxConnect();
+	document.getElementById("pingNodeResp").innerHTML = "";
+	var dest = document.getElementById("pingNode").value;
+	
+	var retfn = returnfn(http, 
+		function(resp) {
+			document.getElementById("pingNodeResp").innerHTML += resp + "<br>";
+			var retfn = returnfn(http, 
+				function(resp) {
+					document.getElementById("pingNodeResp").innerHTML += resp + "<br>";
+				});
+			ajaxSend(http, "cmd=greet\n\n", retfn, dest);
+		});
+		
+	ajaxSend(http, "cmd=ping\n\n", retfn, dest);
+	
+	
+}
+
+function setTestStatus(str, col) {
+	var e = document.getElementById('testStatus');
+	e.innerHTML = str;
+	if (col == null)
+		col = "white";
+	e.style.backgroundColor = col;
+	setJobStatus(str, col);
+}
+
+function getLockType(type) {
+	if (type == "test") 
+		return testLocks;
+	else if(type == "range")
+		return rangeLocks;
+	else 
+		return null;
+}
+
+function isLocked(lockType, lockName, start, end) {
+	if (lockType == "range") {
+		var rlock = getRangeLock(lockname, start, end);
+		if (rlock)
+			return rlock.locked;
+		else return false;
+	} else {
+		var locks = getLockType(lockType);
+		if (locks[lockName] == null)
+			return false;
+		else if(locks[lockName].locked != true)
+			return false;
+		else
+			return true;
+	}
+}
+
+
+function loadTest(tname) {
+	if(tname == '') {
+		setTestStatus("Invalid name '" + tname + "'", "red");
+		return false;
+	}
+	if(tname.indexOf(' ') >= 0) {
+		setTestStatus("Invalid name '" + tname + "', Cannot contain spaces", "red");
+		return false;
+	}
+	
+	if(isLocked("test", tname)) {
+		setTestStatus("Test '" + tname + "' locked by " + testLocks[tname].addr, "red");
+		return false;
+	}
+	
+	
+	getLock("test", tname);
+	
+}
+
+function retrieveLock(struct) {
+	if (struct.type == "test") {
+		return testLocks[struct.name];
+	} else if(struct.type == "range") {
+		var l = getRangeLock(struct.name, struct.start, struct.end);
+		if (l == null) 
+			error("retrieveLock for range got null");
+		return l;
+	}
+}
+
+function getLock(type, name, start, end) {
+	var locks = getLockType(type);
+	var lockTry;
+	
+	if (type == "test") {
+		if(locks[name] == null) {
+			locks[name] = new Object();
+		}
+		lockTry = locks[name];
+	} else if (type == "range") {
+		lockTry = getRangeLock(name, start, end);
+		if (!lockTry) {
+			error("Cannot get range lock in getLock(" + name +", "+ start + ", " + end + ")");
+			return;
+		}
+	}
+	
+	
+	lockTry.time = getTime();
+	lockTry.dlc = dlc+1;
+	lockTry.name = name;
+	lockTry.addr = localNodeAddr;
+	lockTry.type = type;
+	lockTry.okay = 1;
+	lockTry.locked = false;
+	var d = new Date();
+	lockTry.localTime = d.getTime();
+	
+	if (type == "test") {
+		lockTrys[type] = lockTry;
+		setTestStatus("Acquiring lock for test '" + name + "' " + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
+	} else if (type == "range") {
+		lockTrys[type] = lockTry;
+		setWorkStatus("Acquiring lock for work '" + name + "' (" + lockTry.start + " to " + lockTry.end + ")" + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
+	} 
+	
+	
+	
+	var m = new Object();
+	m["query"] = "getLock";
+	m["type"] = type;
+	m["name"] = name;
+	m["time"] = lockTry.time;
+	m["addr"] = localNodeAddr;
+	if (type == "range") {
+		m["start"] = start;
+		m["end"] = end;
+	}
+	bcastMsg(m);
+}
+
+function lessTime(t1, t2) {
+	var t1a = t1.split(":");
+	var t2a = t2.split(":");
+	if(t1a[0] < t2a[0]) 
+		return true;
+	else if (t1a[0] == t2a[0] && t1a[1] < t2a[1])
+		return true;
+	else if (t1a[0] == t2a[0] && t1a[1] == t2a[1] && t1a[2] < t2a[2])
+		return true;
+	return false;
+}
+
+function cameFirst(a, b) {
+	log("cameFirst? " + a.dlc + ":" + a.addr + " and " + b.dlc + ":" + b.addr);
+	if (b.dlc == null)
+		return true;
+	if (a.dlc < b.dlc)
+		return true;
+	else if (a.dlc > b.dlc)
+		return false;
+	else {
+		var aip = a.addr.split(":")[0].split(".");
+		aip[4] = a.addr.split(":")[1];
+		var bip = b.addr.split(":")[0].split(".");
+		bip[4] = b.addr.split(":")[1];
+		for(var i = 0; i < 5; i++) {
+			if (aip[i] < bip[i])
+				return true;
+			else if (aip[i] > bip[i])
+				return false;
+		}
+		alert("cameFirst: SAME NODE?");
+		log("cameFirst: SAME NODE?");
+		return false;
+	}
+
+}
+
+function locksEqual(a, b) {
+	if(a == null || b == null)
+		return false;
+	if(a['type'] != b['type'])
+		return false;
+	if(a['type'] == 'test') {
+		if (a.name == b.name)
+			return true;
+		else
+			return false;
+	} else if (a['type'] == "range") {
+		log("locksEqual? " + a.name + " (" + a.start + " to " + a.end + ") and " + b.name + " (" + b.start + " to " + b.end + ")");
+		if (a.name == b.name && a.start == b.start && a.end == b.end) {
+			log("true");
+			return true;
+		} else {
+			log("false");
+			return false;
+		}
+	}
+}
+
+
+function grantLock(resp, lock) {
+	removeNodeRangeLocks(resp.origin);
+	lock.name = resp['name'];
+	lock.addr = resp['origin'];
+	lock.time = resp['time'];
+	lock.dlc = resp['dlc'];
+	lock.locked = true;
+	//locks[lock.name] = lock;
+	respLockReq(resp, "okay");
+}
+
+function denyLock(resp, lock) {
+	respLockReq(resp, lock.addr);
+}
+
+function handleLockReq(resp) {
+	var locks = getLockType(resp["type"]);
+	var lock;
+	
+	if(resp['type'] == "test") {
+		lock = locks[resp["name"]];
+	} else if(resp['type'] == "range") {
+		lock = getRangeLock(resp['name'], resp['start'], resp['end']);
+		if (lock == null) {
+			// error?
+			respLockReq(resp, "no");
+			return;
+		}
+	}
+	
+	var tryLock = lockTrys[resp['type']];
+	
+	if (lock == null) { 
+	// can only be for test, null for range is error
+		testLocks[resp['name']] = resp;
+		grantLock(resp, testLocks[resp['name']]);
+	} else { // we have it
+	
+		// is it?
+		// locked, or we are trying for it
+		// was it JUST locked and not confirmed, did this req COME FIRST? 
+		if (lock.locked == true) {
+			if (lock.addr == resp.origin) {
+				grantLock(resp, lock);
+			} else
+			if (cameFirst(resp, lock) || resp.origin == lock.addr) {
+				log("true");
+				grantLock(resp, lock);
+			} else {
+				log("false");
+				denyLock(resp, lock);
+			}
+		} else if (locksEqual(tryLock, lock)) {
+			if (cameFirst(resp, tryLock)) {
+				// we lost
+				log("true");
+				lockTrys[resp['type']] = null;
+				grantLock(resp, lock);
+			} else {
+				//we win
+				log("false");
+				denyLock(resp, lock);
+			}
+		} else {
+			grantLock(resp, lock);
+		}
+	}
+}
+			 
+			
+		
+	
+	/* 	1) if we dont have a record of the lock, GRANT
+	 *	2) if we have a record of it
+	 *		2.1) is it locked or tring to be locked (us or other)?
+	 *			2.1.1) yes? was our request BEFORE?
+	 *				2.1.1.1) yes? GRANT
+	 *				2.1.1.2) no? NO?
+	 *			2.1.2) no? GRANT
+	 */	
+	
+	/*if (lock == null ||
+		(lockTrys[resp['type']] && lockTrys[resp['type']].name == resp['name'] && cameFirst(resp, lock)) || 
+		((!lockTrys[resp['type']] || lockTrys[resp['type']].name != resp['name']) && lock.locked == false)) {*/
+	/*	if (rlock == null ||
+			(rlock.locked == false && locksEqual(rlock, tlock) != true) ||
+			(locksEqual(rlock, tlock) == true && cameFirst, resp, rlock)) {
+	
+		//lock = new Object();
+		rlock.name = resp['name'];
+		rlock.addr = resp['origin'];
+		rlock.time = resp['time'];
+		rlock.dlc = resp['dlc'];
+		rlock.locked = true;
+		//locks[lock.name] = lock;
+		respLockReq(resp, "okay");
+	} else {
+		respLockReq(resp, rlock.addr);
+	}
+}*/
+
+function handleLockResp(resp) {
+	if (!lockTrys[resp['type']])
+		return;
+
+	var tryLock = lockTrys[resp['type']];
+	var lock = retrieveLock(resp);
+	if( !locksEqual(tryLock, lock)) 
+		return;
+	else if (tryLock.time != lock.time)
+		return;
+		
+		
+	if (resp['resp'] == "okay") {
+		lock.okay++;
+		
+		if (resp['type'] == "test") 
+			setTestStatus("Acquiring lock for test '" + lock["name"] + "' " + lock.okay + "/" + numberOfNodes + "...", "yellow");
+		else if(resp['type'] == "range")
+			setWorkStatus("Acquiring lock for work '" + lock.name + "' (" + lock.start + " to " + lock.end + ")" + lock.okay + "/" + numberOfNodes + "...", "yellow");
+	} else {
+		if (resp['resp'] != 'no'){
+			lock.locked = true;
+			lock.addr = resp.resp;
+		}
+		if (resp['type'] == "test") 
+			setTestStatus("Test '" + lock['name'] + "' locked by " + resp['resp'], "red");
+		else
+			setWorkStatus("Work '" + lock.name + "' (" + lock.start + " to " + lock.end + ") locked by " + resp['resp'], "red");
+		
+		
+		lockTrys[resp['type']] = null;
+		runTry = null;
+	}
+
+}
+
+
+
+function openTest(name) {
+	if (!tests[name])
+		tests[name] = new Array();
+	var map = "";
+	if (tests[name]['mapfn'])	
+		map = tests[name]['mapfn'];
+	var reduce = "";
+	if (tests[name]['reducefn']) 
+		reduce = tests[name]['reducefn'];
+	document.getElementById('mapEditor').value = map;
+	document.getElementById('reduceEditor').value = reduce;
+
+}
+
+function lockGranted(type, lock) {
+	if (type == "test") {
+		setTestStatus("Lock for '" + lock['name'] + "' Granted!", "lime");
+	} else if (type == "range") {
+		setWorkStatus("Lock for work " + lock.name + " (" + lock.start + " to " + lock.end + ") Granted!", "lime");
+	}
+	
+	myLocks[lock['type']] = lock;
+	
+	if (type == "test") {
+		if (runTry != null && lock['name'] == runTry) {
+			runTry = null;
+			startJobRun(lock);
+	
+		} else {
+	
+			openTest(lock['name']);
+	
+			document.getElementById('mapEditor').readOnly = false;
+			document.getElementById('reduceEditor').readOnly = false;
+			document.getElementById('testLoad').disabled = true;
+			document.getElementById('testRelease').disabled = false;
+		}
+	} else if (type == "range") {
+		compileTest(lock.name);
+	}
+}
+
+function checkLocks() {
+	var timeOut = Math.max(5000, Math.min(15000, numberOfNodes*1500));
+	var d = new Date();
+	if (lockTrys["test"]) {
+		var lock = lockTrys["test"];
+		
+		if (d.getTime() - lock.localTime > timeOut) {
+			// reclaime
+			//log2("RECLAIMING LOCK!!")
+			myLocks["test"] = lockTrys["test"];
+			lockTrys["test"] = null;
+			setTestStatus("Lock acquire timed out", "red");
+			releaseLock("test");
+		} else
+		
+		if (lock["okay"] >= numberOfNodes) {
+			lock["locked"] = true;
+			lockGranted("test", lock);
+			lockTrys["test"] = null;
+		}
+		
+	}
+	if (lockTrys["range"]) {
+		var lock = lockTrys["range"];
+		//log2("rangeLocks: " + d.getTime() + " - " + lock.localTime + " = " + (d.getTime() - lock.localTime));
+		if (d.getTime() - lock.localTime > timeOut) {
+			// reclaime
+			//log2("RECLAIMING LOCK!!")
+			myLocks["range"] = lockTrys["range"];
+			lockTrys["range"] = null;
+			setJobStatus("Lock acquire timed out", "red");
+			releaseLock("range");
+		} else
+		if (lock["okay"] >= numberOfNodes) {
+			lock["locked"] = true;
+			lockGranted("range", lock);
+			lockTrys["range"] = null;
+		}
+	}
+}
+
+function respLockReq(resp, ret) {
+	var m = new Object();
+	m.query = "lockResp";
+	m.resp = ret;
+	m.name = resp["name"];
+	m.type = resp["type"];
+	if (resp.type == "range")
+	{
+		m.start = resp.start;
+		m.end = resp.end;
+	}
+	sendMsg(m, resp["origin"]);
+}
+
+function updateTestsStatus() {
+	var e = document.getElementById("testsList");
+	var str = "";
+	for(name in testLocks) {
+		var lock = testLocks[name];
+		var d = '<div style="background-color: ';
+		if (lock.locked == true)
+			if (lock.running) 
+				d += "orange";
+			else
+				d += "red";
+		else 
+			d += "lime";
+		d += '">' + lock.name;
+		if (lock.locked) {
+			if (lock.running)
+				d += " running... ";
+			else
+				d += " locked by " + lock.addr;
+		}
+		d += "</div>";
+		str += d;
+		
+	}
+	e.innerHTML = str;
+}
+
+function updateJobsList() {
+	var e = document.getElementById("jobsList");
+	var str = '<table>';
+	str += '<tr><th rowspan="2">Test</th><th colspan="2">Range</th><th rowspan="2">Items/Job</th><th rowspan="2">Go</th></tr>';
+	str += "<tr><th>Min</th><th>Max</th></tr>";
+	for(name in tests) {
+		var lock = testLocks[name];
+		var d = '<tr style="background-color: ';
+		if(lock.locked == true)
+			if (lock.running)
+				d += "orange";
+			else
+				d += "red";
+		else
+			d += "lime";
+		d += '"><td>' + lock.name+"</td>";
+		var val = 1;
+		var elem = document.getElementById(name+'_min');
+		if (elem) val = elem.value;
+		d += '<td><input size="8" id="' + lock.name + '_min" value="'+val+'"';
+		if (lock.locked) d+= ' readonly="true" ';
+		d += '/ ></td>';
+	 	val = 101;
+		elem = document.getElementById(name+'_max');
+		if (elem) val = elem.value;
+		d += '<td><input size="14" id="' + lock.name + '_max" value="'+val+'"';
+		if (lock.locked) d += ' readonly="true" ';
+		d += '/ ></td>';
+		val = 10;
+		elem = document.getElementById(name+'_perjob');
+		if (elem) val = elem.value;
+		d += '<td><input size="6" id="' + lock.name + '_perjob" value="'+val+'"';
+		if (lock.locked) d += ' readonly="true" ';
+		d += '/ ></td>';
+		d += '<td><input type="button" value="Start!" onClick="startJob(' + "'" + lock.name + "'" + ');"/ ></td>';
+		d += "</tr>";
+		str += d;
+	}
+	str += "</table>";
+	e.innerHTML = str;
+
+}
+
+function setJobStatus(str, col) {
+	var e = document.getElementById('jobStatus');
+	e.innerHTML = str;
+	if (col == null)
+		col = "white";
+	e.style.backgroundColor = col;
+}
+
+
+function startJob(name) {
+	var min = Number(document.getElementById(name+'_min').value);
+	var max = Number(document.getElementById(name+'_max').value);
+	var perjob = Number(document.getElementById(name + '_perjob').value);
+	
+	if(min == NaN) {
+		setJobStatus("No Min Value", "red");
+		return;
+	}
+	if(max == '') {
+		setJobStatus("No Max Value", "red");
+		return;
+	}
+	if(max <= min) {
+		setJobStatus("Max <= Min", "red");
+		return;
+	}
+	
+	if ((max-min) % perjob != 0) {
+		setJobStatus("Max not divisible by items/job", "red");
+		return;
+	}
+	var lock = testLocks[name];
+	if(lock.locked == true) {
+		setJobStatus("Test is locked by " + lock.addr);
+		return;
+	} 
+		
+
+	//setJobStatus("Running ...", "");
+	runTry = name;
+	getLock("test", name);
+
+}
+
+function startJobRun(lock) {
+	var min = Number(document.getElementById(lock.name+'_min').value);
+	var max = Number(document.getElementById(lock.name+'_max').value);
+	var perjob = Number(document.getElementById(name + '_perjob').value);
+
+	var m = new Object();
+	m.min = min;
+	m.max = max;
+	m.perjob = perjob;
+	m.name = lock.name;
+	m.query = "activateJob";
+	bcastMsg(m);
+	handleActivateJob(m);
+	setJobStatus(" Running '" + lock.name + "'...", "orange");
+
+}
+
+function handleActivateJob(resp) {
+	var locks = getLockType("test");
+	var lock = locks[resp['name']];
+	lock.running = true;
+	lock.min = resp.min;
+	lock.max = resp.max;
+	lock.perjob = resp.perjob;
+	runningTests.push(resp.name);
+	doneStage = 0;
+	setResultsStatus("Proccessing...", "orange");
+	lookForWork();
+}
+
+function makeTestMsg(name) {
+	var m = new Object();
+	m.query = "testUpdate";
+	m.name = name;
+	m.mapfn = encodeStr(tests[name]["mapfn"]);
+	m.reducefn = encodeStr(tests[name]["reducefn"]);
+	
+	return m;
+}
+
+function releaseTestLock() {
+	// sync data
+	var name = myLocks["test"].name;
+	tests[name]["mapfn"] = document.getElementById('mapEditor').value;
+	document.getElementById('mapEditor').readOnly = true;
+	document.getElementById('mapEditor').value = "";
+
+	tests[name]["reducefn"] = document.getElementById('reduceEditor').value;
+	document.getElementById('reduceEditor').readOnly = true;
+	document.getElementById('reduceEditor').value = "";	
+
+	m = makeTestMsg(name);
+	bcastMsg(m);
+	
+	document.getElementById('testLoad').disabled = false;
+	document.getElementById('testRelease').disabled = true;
+	setTestStatus("");
+	releaseLock("test");
+}
+
+function handleTestUpdate(resp) {
+	if (!tests[resp['name']])
+		tests[resp['name']] = new Array();
+	tests[resp['name']]['mapfn'] = decodeStr(resp["mapfn"]);
+	tests[resp['name']]['reducefn'] = decodeStr(resp["reducefn"]);
+}
+
+function releaseLock(type) {
+	var lock = myLocks[type];
+	myLocks[type] = null;
+	
+	lock.locked = false;
+	
+	
+	var m = new Object();
+	m["query"] = "releaseLock";
+	m["type"] = type;
+	m["name"] = lock.name;
+	if (type == "range") {
+		m["start"] = lock.start;
+		m["end"] = lock.end;
+	}
+		
+	bcastMsg(m);
+}
+
+function handleLockRelease(resp) {
+	//var locks = getLockType(resp['type']);
+	//locks[resp['name']].locked = false;
+	var lock = retrieveLock(resp);
+	if (lock) 
+		lock.locked = false;
+}
+
+function setWorkStatus(str, col) {
+	var e = document.getElementById('workStatus');
+	e.innerHTML = str;
+	if (col == null)
+		col = "white";
+	e.style.backgroundColor = col;
+}
+
+var workSize = 10;
+
+function lookForWork() {
+	//log("Look For Work!");
+	if (myLocks["range"] != null || lockTrys["range"] != null) {
+		// have work
+		return;
+	}
+	if (runningTests.length > 0) {
+		for (var i =0; i < runningTests.length; i++) {
+			var lock = testLocks[runningTests[i]];
+			//log("Looking for work in test " + lock.name);
+			// hilarious test
+			//workSize = Math.round(Math.random()*25);
+			var rlock = makeRangeLock(lock, lock['perjob'])
+			if (rlock) {
+				getLock("range", lock.name, rlock.start, rlock.end);
+				return;
+			} 
+			// else no work left in this task
+		}
+		setWorkStatus("No work available (All tasks' work is locked and/or done)");
+		doneStage = 1;
+	} else {
+		setWorkStatus("No work available (no running tests)");
+	}
+}
+
+function getRangeLock(name, start, end) {
+	log("getRangeLock for (" + name + " from " + start + " to " + end + ")");
+	if (!rangeLocks[name]) {
+		log("no locks for " + name + ", so MAKING");
+		rangeLocks[name] = genRangeCell(name, start, end);
+		return rangeLocks[name];
+	} 
+	log("locks exist for " + name + " so SEARCHING forward");
+	var rlock = rangeLocks[name];
+	
+	if(end < rlock.start) {
+		log("Space before first lock, MAKING HERE");
+		rangeLocks[name] = genRangeCell(name, start, end);
+		rangeLocks[name].next = rlock;
+		return rangeLocks[name];
+	}
+	
+	while(rlock.next && rlock.start < rlock.end+1) {
+		log("looking at (" + rlock.start + " to " + rlock.end + ")");
+		if (rlock.start == start && rlock.end == end) {
+			log("FOUND IT");
+			return rlock;
+		}
+		
+		if (rlock.end < start && rlock.next.start > end) {
+			log("GAP between (" + rlock.start + " to " + rlock.end + ") and (" + rlock.next.start + " to " + rlock.next.end + ") where we should be so MAKING THERE");
+			var nlock = rlock.next;
+			rlock.next = genRangeCell(name, start, end);
+			rlock.next.next = nlock;
+			return rlock.next;
+		}
+		
+		rlock = rlock.next;
+	}
+	log("SEARCH ended");
+	if (rlock.start == start && rlock.end == end) {
+		log("Found it!");	
+		return rlock;
+	} else {
+		if (rlock.end < start) {
+			log("There is space at the end to make what we want");
+			rlock.next = genRangeCell(name, start, end);
+			return rlock.next;
+		} else {
+			log("search ended after what we wanted, FAIL");
+			return null;
+		}
+	}
+	
+}
+
+function makeRangeLock(tlock, suggestedSize) {
+	suggestedSize--;
+	
+	//log("makeRangeLock or size " + suggestedSize + " for (" + tlock.name + " from " + tlock.min + " to " + tlock.max + ")");
+	
+	if (!rangeLocks[tlock.name]) {
+		//log("no locks for " + tlock.name + ", so MAKING");
+		
+		rangeLocks[tlock.name] = genRangeCell( tlock.name, tlock.min,
+				 Math.min(tlock.max, tlock.min + suggestedSize));
+		return rangeLocks[tlock.name];
+	} else {
+		//log("some locks for " + tlock.name + " so FINDING");
+		var rlock = rangeLocks[tlock.name];
+		if (rlock.start > tlock.min) {
+			//log("First lock is above min, so making NEW lock before it to use");
+			rangeLocks[tlock.name] = genRangeCell(tlock.name, Math.max(tlock.min, rlock.start-1-suggestedSize), rlock.start-1);
+			rangeLocks[tlock.name].next = rlock;
+			return rangeLocks[tlock.name];
+		}
+		//log("Searching linked list forward");
+		while (rlock.next && (rlock.locked || rlock.done)) {
+			//log("looking at (" + rlock.start + " to " + rlock.end + ")");
+			if (rlock.next.start != rlock.end +1) {
+				//log("GAP between (" + rlock.start + " to " + rlock.end + ") and (" + rlock.next.start + " to " + rlock.next.end + ") so MAKING THERE");
+				var nlock = rlock.next;
+				rlock.next = genRangeCell(tlock.name, rlock.end+1, 
+					Math.min(rlock.end+1+suggestedSize, nlock.start-1));
+				rlock.next.next = nlock;
+				return rlock.next;
+			}
+			rlock = rlock.next;
+		}
+		//log("DONE searching");
+		if (rlock.locked || rlock.done) {
+			//log("this one not acceptable");
+			if (rlock.end == tlock.max) {
+				//log ("this one also at end, so FAIL");
+				return null
+			} else {
+				//log("still more room at end, so MAKING at end");
+				rlock.next = genRangeCell(tlock.name, rlock.end+1,
+				Math.min(tlock.max, rlock.end+1+ suggestedSize));
+				return rlock.next;
+			}
+		} else {
+			//log("this one acceptable (" + rlock.start + " to " + rlock.end + ")");
+			return rlock;
+		}
+	}
+}
+
+function genRangeCell(name, start, end, next) {
+	var c = new Object();
+	c.name = name;
+	c.start=start;
+	c.end = end;
+	c.next = next;
+	c.locked = false;
+	c.done = false;
+	return c;
+}
+
+var map_test = null;
+var reduce = null;
+function compileTest(name) {
+	mapCode = tests[name].mapfn;
+	mapCode = "map_test = function(value) {\n" + mapCode + "\n}";
+	//log("evaling: " + mapCode);
+	try {
+		eval(mapCode);
+	} catch (exception) {
+		error("compiling map_test: " + exception);
+	}
+	
+	reduceCode = tests[name].reducefn;
+	reduceCode = "reduce = function(list) {\n" + reduceCode + "}\n";
+	//log("evaling: " + reduceCode);
+	try {
+		eval(reduceCode);
+	} catch (exception) {
+		error("compiling reduce: " + exception);
+	}
+}
+
+
+var workMapPos = null;
+var workReduce = false;
+var workList = new Array();
+var isWorking = false;
+function doWork() {
+	if (myLocks["range"]) {
+		isWorking = true;
+		var lock = myLocks["range"];
+		//log("Acquired work...");
+		setWorkStatus("Working on " + lock.name + " set (" + lock.start + " to " + lock.end + ")...", "lime");
+		if (workMapPos == null)
+			workMapPos = lock.start;
+
+		if (workMapPos <= lock.end) {
+			//log("Mapping on " + workMapPos);
+			var item = new Object();
+			item.key = workMapPos;
+			item.value = map_test(workMapPos);
+			//log("result = " + item.value);	
+			workList.push(item);
+			workMapPos++;
+		} else if (workReduce == false) {
+			//log("Reducing");
+
+			if(reduce == null)
+				error ("no reduce");
+			lock.results = reduce(workList);
+			
+			//log("FINAL RESULTS: " + lock.results);
+			
+			workMapPos = null;
+			workReduce = false;
+			workList = new Array();
+			
+			lock.done = true;
+			sendResults(lock);
+			releaseLock("range");
+			lookForWork();
+		}
+	} else {
+		isWorking = false;
+	}
+		
+}
+
+function sendResults(lock) {
+	m = new Object();
+	m.query = "results";
+	m.name = lock.name;
+	m.start = lock.start;
+	m.end = lock.end;
+	m.results = lock.results;
+	
+	bcastMsg(m);
+}
+
+function handleResults(resp) {
+	lock = getRangeLock(resp.name, resp.start, resp.end);
+	if(lock == null) {
+		error("handleResults: lock == null");
+		return;
+	}
+	log("Setting results for " + resp.name + " (" + resp.start + " to " + resp.end + ") to " + resp.results);
+	lock.done = true;
+	lock.results = resp.results;
+}
+
+function updateResults() {
+	var e = document.getElementById("workDiv");
+	var str = "";
+	//for (var i =0; i < runningTests.length; i++) {
+	for (var i in rangeLocks) {
+		//var lock = testLocks[runningTests[i]];
+		var lock = testLocks[i];
+		str += "<i>" + lock.name + " (" + lock.min + " to " + lock.max + "):</i><br>";
+		var rlock = rangeLocks[lock.name];
+		while(rlock != null) {
+			str += '<div style="background-color:';
+			if (rlock.locked == false && rlock.done == false)
+				str += "red";
+			else if(rlock.locked == true && rlock.done != true)
+				str += "orange";
+			else if(rlock.done == true) 
+				str += "lime";
+			str += ';">' + rlock.start + "-" + rlock.end + ": ";
+			if(rlock.locked == false && rlock.done == false)
+				str += "AVAILABLE";
+			else if(rlock.locked == true && rlock.done != true)
+				str += "being PROCESSED at " + rlock.addr;
+			else if(rlock.done == true) {
+				//str += "DONE";
+				str += packResults(rlock.results);
+			}
+			str += "</div>";
+			rlock = rlock.next;
+		}
+		str += "<br\/ ><br \/ >";
+	}
+	e.innerHTML = str;
+}
+
+function setResultsStatus(str, col) {
+	var e = document.getElementById('resultsStatus');
+	e.innerHTML = str;
+	if (col == null)
+		col = "white";
+	e.style.backgroundColor = col;
+}
+
+function addArray(a, newRes) {
+	if (!newRes)
+		return;
+	for(var i = 0; i <  newRes.length; i++) {
+		a.push(newRes[i]);
+	}
+}
+
+function updateFinalResults() { 
+	
+	if (doneStage == 1) { // all locked, make sure all done
+		for (var i =0; i < runningTests.length; i++) {
+			var lock = testLocks[runningTests[i]];
+			var rlock = rangeLocks[runningTests[i]];
+			
+			while(rlock) {
+				if (rlock.done != true)
+					return;
+				rlock = rlock.next;
+			}
+		}
+		doneStage = 2;
+	} 
+	// pricess new results
+	if (doneStage == 2) {
+		setResultsStatus("Final Reducing...", "yellow");
+		for(var i=0; i < runningTests.length; i++ ) {
+			var lock = testLocks[runningTests[i]];
+			var rlock = rangeLocks[runningTests[i]];
+			var fr = finalResults[runningTests[i]];
+			if (fr)
+				continue;
+			
+			var results = new Array();
+			while (rlock) {
+				addArray(results, rlock.results);
+				rlock = rlock.next;
+			}
+			results = reduce(results);
+			
+			finalResults[runningTests[i]] = results;
+		}
+		doneStage++;
+	}
+	
+	if(doneStage == 3) {
+		// all work done!
+		setResultsStatus("Done", "lime");
+		var e = document.getElementById("resultsDiv");
+		var str = "";
+		
+		//for(var i=0; i < runningTests.length; i++ ) {
+		for (i in finalResults) {
+			var lock = testLocks[i];
+			//var rlock = rangeLocks[i];
+			str += "<i>" + lock.name + " (" + lock.min + " to " + lock.max + "):</i><br>";
+			var results = finalResults[i];
+			
+			str += packResults(results);
+			str += "<br><br>";
+		}
+		
+		e.innerHTML = str;
+	}
+}
+
+
+	
+
+var cronID = setInterval("cron()", 100);
+
+function page(p) {
+	// turn off all pages
+	document.getElementById("pageHome").style.visibility="hidden";
+	document.getElementById("pageTests").style.visibility="hidden";
+	document.getElementById("pageJobs").style.visibility="hidden";
+	document.getElementById("pageWork").style.visibility="hidden";
+	document.getElementById("pageResults").style.visibility="hidden";
+	
+	// turn on page
+	document.getElementById("page"+p).style.visibility="visible";
+}
+
+function install_defaults() {
+	var m = new Object();
+	m.name = "primes";
+	m.type = "test";
+	m.locked = false;
+	handleAddLock(m);
+	
+	m = new Object();
+	m.name = "primes";
+	m.mapfn = 'var max = Math.round(Math.sqrt(value));\nfor(var i=2; i <= max; i ++) {\n        if (value % i == 0) \n                return false;\n}\nreturn true;\n';
+	
+	m.reducefn = 'var r = new Array();\nfor (var i = 0; i < list.length; i++) {\n        if (list[i].value == true)\n                r.push(list[i]);\n}\nreturn r;\n';
+	
+	handleTestUpdate(m);
+}
+
+install_defaults();
+
+
+	</script>
+</head>
+<body>
+
+<input type="button" value="Home" onClick="page('Home');">
+<input type="button" value="Tests" onClick="page('Tests');">
+<input type="button" value="Jobs" onClick="page('Jobs');">
+<input type="button" value="Work" onClick="page('Work');">
+<input type="button" value="Results" onClick="page('Results');">
+
+<!-- HOME -->
+
+<div id="pageHome" class="page">
+<div id="statusLabel"></div>
+<div id="numberOfNodes">Number of nodes: <script> document.write(numberOfNodes); </script></div>
+<div id="connections">Connected to:</div>
+<div id="dlc">DLC:</div>
+<input id="networkAddr"><input type="button" value="Join Network" onClick="join_network(document.getElementById('networkAddr').value);"><br/>
+<br />
+<b>Log:</b> <input type="checkbox"  value="log"  id="logCheck"/>Log?<br/>
+<textarea rows="7" cols="60" id="log" readonly="true"></textarea>
+<br/>
+<input type="button" value="Reload HTML" onclick="reloadHTML()" />		
+<br/><br/>
+<input type="button" value="Kill Server" onClick="killServer()" />
+	
+<script>ping();</script>	
+</div>
+
+
+
+<!-- TESTS -->
+
+<div id="pageTests" class="page">
+<b>Tests</b><br/>
+Tests:
+<div id="testsList"></div>
+<br/>
+<input id="testName" value="">
+<input id="testLoad" type="button" value="Load Test" onClick="loadTest(document.getElementById('testName').value);">
+<div id="testStatus"></div>
+<br/>map_test (value) {
+<textarea rows="10" cols="60" id="mapEditor" readonly="true"></textarea>
+<br/>}<br/>
+<br/>
+<i>// list :: array of hashes with 'key' and 'value' as elements</i><br/>
+reduce (list) { 
+<textarea rows="10" cols="60" id="reduceEditor" readonly="true"></textarea>
+<br/>}<br/>
+<br/>
+<input id="testRelease" type="button" disabled="true" value="Save/Release" onClick="releaseTestLock()">
+</div>
+
+
+<!-- JOBS -->
+
+<div id="pageJobs" class="page">
+<b>Jobs</b><br/><br/>
+
+<div id="jobStatus"></div><br/>
+<div id="jobsList">
+</div>
+
+</div>
+
+<!-- WORK -->
+
+<div id="pageWork" class="page">
+<b>Work</b><br/><br/>
+
+Currently:<br/>
+<div id="workStatus"></div>
+<br/><br/>
+Results:<br/>
+<div id="workDiv"></div>
+
+
+</div>
+
+<div id="pageResults" class="page">
+<b>Results</b><br/><br/>
+<div id="resultsStatus">Not Proccessing</div>
+<div id="resultsDiv"></div>
+</div>
+
+<!--- CODE -->
+<div id="pageCode" class="page">
+</div>
+
+<script>
+page("Home");
+</script>
+</body>
+</html>
