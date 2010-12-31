@@ -131,6 +131,9 @@ function getLog() {
 			var log = document.getElementById('log');
 			//alert("getLog() resp: " + resp);
 			log.value =  resp + log.value;
+			// Since getLog returns (a call back is called later)
+			// this is tail recursive friendly
+			getLog();
 		});
 	ajaxSend(http, "cmd=getLog\n\n", retfn);
 }
@@ -170,7 +173,11 @@ function getMsgs() {
 	var retfn = returnfn(http, 
 		function(resp) {
 			//log("getMsgs: len > 0");
+			log("getMsgs: " + resp);
 			queueMsgs(resp);
+			// Since getMsgs returns (a call back is called later)
+			// this is tail recursive friendly
+			getMsgs(); 
 		});
 	ajaxSend(http, "cmd=getMsgs\n\n", retfn);
 }
@@ -801,14 +808,14 @@ function cron() {
 		
 	}
 	
-	if (runCount % 5 == 0) {
+	/*if (runCount % 5 == 0) {
 		getMsgs();
-	}
+	}*/
 	
 	// once a second
 	if (runCount % 10 == 0) {
 		ping();
-		getLog();
+		//getLog();
 		setStatus();
 		checkLocks();
 		updateTestsStatus();
@@ -1845,6 +1852,9 @@ function updateFinalResults() {
 	
 
 var cronID = setInterval("cron()", 100);
+getMsgs();
+getLog();
+
 
 function page(p) {
 	// turn off all pages

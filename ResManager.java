@@ -1,3 +1,4 @@
+import java.applet.*;
 import java.util.HashMap;
 import javax.swing.JOptionPane.*;
 import java.util.ArrayList;
@@ -11,20 +12,27 @@ import java.net.*;
 
 class ResManager {
 	public /*final*/ int PORT = 2600;
+	private Applet applet;
+	
+	FileWriter debugFW = null;
+	BufferedWriter debugOut = null;
 
 	private HashMap<String, byte[]> site = new HashMap<String, byte[]>();
 	private HashMap<String, String> nodeData = new HashMap<String, String>();
 	
+	// Internal Activity Log
 	private ArrayList<String> log = new ArrayList<String>();
-	private boolean logLock = false;
+	//private boolean logLock = false;
 	private DateFormat logDateFormat = new SimpleDateFormat("HH:mm:ss");
 	
-	private boolean mqLock = false;
+	// Message Queue
+	//private boolean mqLock = false;
 	private ArrayList<String> msgQueue = new ArrayList<String>();
 
 	public boolean killSwitch = false;	
 	
-	public ResManager() {
+	public ResManager(Applet a) {
+		applet = a;
 	}
 	
 	public void putSite(String key, byte[] val) {
@@ -43,62 +51,74 @@ class ResManager {
 		return nodeData.get(key);
 	}
 	
-	private synchronized void logLock() {
-		while (logLock == true) {
+	public void log(String l) {
+		synchronized (log) {
+			Date d = new Date();
+			log.add(logDateFormat.format(d) + ": " + l);
+			log.notifyAll();
+			if (debugOut != null) {
 			try {
-				wait();
-			} catch (Exception e) {
-				error("logLock: " + e.toString());
+					debugOut.write(logDateFormat.format(d) + ": " + l + "\n");
+					debugOut.flush();
+				} catch (IOException e) {
+					// Fail
+				}
 			}
 		}
-		logLock = true;
-		//javax.swing.JOptionPane.showMessageDialog(null, " Locked");
 	}
 	
-	private synchronized void logUnlock() {
-		logLock = false;
-		//javax.swing.JOptionPane.showMessageDialog(null, " UnLocked");
-	}
-	
-	public synchronized void log(String l) {
-		logLock();
-		Date d = new Date();
-		log.add(logDateFormat.format(d) + ": " + l);
-		logUnlock();
-	}
-	
-	private synchronized void mqLock() {
-		while(mqLock == true) {
-			try { 
-				wait();
-			} catch (Exception e) {
-				error("mqLock: " + e.toString());
+	public void debug(String l) {
+		synchronized (log) {
+			Date d = new Date();
+			try {
+				debugOut.write(logDateFormat.format(d) + ": " + l + "\n");
+				debugOut.flush();
+			} catch (IOException e) {
+				// Fail
 			}
 		}
-		mqLock = true;
 	}
 	
-	private synchronized void mqUnlock() {
-		mqLock = false;
+	public void logWait() {
+		synchronized(log) {
+			try {
+				log.wait();
+			} catch (Exception e) { }
+		}
 	}
 	
-	public synchronized void queueMsg(String m) {
-		mqLock();
-		msgQueue.add(m);
-		mqUnlock();
+	public void queueMsg(String m) {
+		synchronized (msgQueue) {
+			msgQueue.add(m);
+			msgQueue.notifyAll();
+		}
+		//applet.repaint();
 	}
 	
-	public synchronized ArrayList<String> getMsgs() {
-		mqLock();
-		ArrayList<String> mq = msgQueue;
-		msgQueue = new ArrayList<String>();
-		mqUnlock();
+	public void mqWait() {
+		synchronized(msgQueue) {
+			try {
+				msgQueue.wait();
+			} catch (Exception e) { }
+		}
+	}
+	
+	public ArrayList<String> getMsgs() {
+		ArrayList<String> mq;
+		synchronized(msgQueue) {
+			mq = msgQueue;
+			msgQueue = new ArrayList<String>();
+		}
+		//applet.repaint();
 		return mq;
 	}
 	
+	public int mqSize() {
+		return msgQueue.size();
+	}
 	
 	public void alert(String a) {
-		javax.swing.JOptionPane.showMessageDialog(null, a);
+		javax.swing.JOptionPane.showMessageDialog(null, Integer.toString(PORT)  + ": " + a);
 		log("ALERT> " + a);
 	}
 	
@@ -108,13 +128,13 @@ class ResManager {
 	}
 	
 	// returns the current log and RESETS it
-	public synchronized ArrayList<String> getLog() 
+	public ArrayList<String> getLog() 
 	{
-		logLock();
-		ArrayList<String> tmp = log;
-		log = new ArrayList<String>();
-		logUnlock();
-		return tmp;
+		synchronized(log) {
+			ArrayList<String> tmp = log;
+			log = new ArrayList<String>();
+			return tmp;
+		}
 	}
 	
 	public void reloadSite() {
@@ -158,22 +178,18 @@ class ResManager {
 		}
 		
 	}
-	
-	
-	/*
-	public synchronized void put(String key, String val) {
-		//javax.swing.JOptionPane.showMessageDialog(null, "putting: '" + key + "'");
-		//javax.swing.JOptionPane.showMessageDialog(null, val);
-		//data.put(key, val);
-	}
-	
-	public synchronized String get(String key) {
-		//javax.swing.JOptionPane.showMessageDialog(null, "getting: '" + key + "'");
-		//javax.swing.JOptionPane.showMessageDialog(null, "from: " + data.keySet().toString());
-		
-		//return data.get(key);
-	}*/
 
-
+	public void openDebugLog(String ip) {
+		String fname = "cortex." + ip + ":" + Integer.toString(PORT) + ".log";
+		//FileWriter debugFileW = new FileWriter("/tmp/" + fname);
+		try {
+			debugFW = new FileWriter("/tmp/" + fname);
+	        	debugOut = new BufferedWriter(debugFW);
+	        } catch (IOException e) {
+	        	debugFW = null;
+	        	debugOut = null;
+	        	error("Failed to open debug log");
+	        }
+	}	
 
 }

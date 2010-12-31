@@ -1,5 +1,5 @@
 import java.applet.*;
-//import java.awt.*;
+import java.awt.*;
 import java.awt.event.*;
 import javax.swing.Timer;
 import java.awt.image.*;
@@ -18,71 +18,58 @@ import javax.swing.JOptionPane.*;
 
 
 public class Cortex extends Applet {
-	//private final int PORT = 2600; // in ResManager now
-	private ServerSocket server;
+
+	private Server server;	
+	private ResManager res = new ResManager(this);
 	
-	private ResManager res = new ResManager();
+	public void update(Graphics g)
+        {
+                paint(g);
+        }
+
+
+	public void paint(Graphics g) {
+		Dimension size = getSize();
+		g.setColor(Color.black);
+		g.fillRect(0, 0, (int) size.getWidth(), (int) size.getHeight());
+		
+		g.setColor(new Color(223, 200, 255));
+		g.drawString("Cortex Server",8,12);
+		
+		if(!res.killSwitch) {
+			g.setColor(new Color(40, 255, 80));
+			g.drawString("Online on port",2, 28);
+			g.drawString(Integer.toString(res.PORT), 35, 42);
+			/*if (res.mqSize() > 0) {
+				g.setColor(Color.green);
+				g.drawString(".", 80, 42);
+			} else {
+				g.setColor(Color.red);
+				g.drawString(".", 80, 42);
+			}*/
+		} else {
+			g.setColor(Color.red);
+			g.drawString("Offline", 25,28);
+		}
+	}
+
 	
-	
-	/*URL getCodeBase() throws Exception {
-			return new URL("file:///home/dan/src/school/cpsc416/cortex/");
-	}*/
 	
 	/* main
 	 * Main HTTP server.  Accepts connections on PORT and passes them to threads 
 	 *   in the form of ConnHandlers to deal with
 	 */
 	public void init() {
-		//javax.swing.JOptionPane.showMessageDialog(null, "APPLET STARTING!!!!");
-		//res.alert("Starting...");
-		res.putNodeData("originURL", getCodeBase().toString());
-		res.reloadSite();
+		//server = 
+		new Thread(new Server(res, getCodeBase().toString(), this)).start();	
 		
-		//res.alert("Loaded site");
-		
-		boolean bound = false;
-		while(!bound)
-		{
-			try {
-				server = new ServerSocket(res.PORT);
-				bound = true;
-			} catch (IOException e) {
-				res.PORT++;
-			}
-		}
-		
-		
-		/*
+		// be reasonably sure we've secured a valid port
 		try {
-			server = new ServerSocket(res.PORT);	
-		} catch (IOException e) {
-			res.error( "It appears another Cortex Node is already running on this computer, making this one superfulous.\nShutting down..."); 
-		}*/
+			Thread.sleep(100);
+		} catch (Exception e) { /* meh */ }
+		repaint();
 		
-		/*try {
-			JSObject win = JSObject.getWindow(this);
-			win.eval("load();");
-		} catch(Exception e) {
-			res.error(e.toString());
-		}*/
-		
-		try {
-			//res.alert("running server");
-			while (!res.killSwitch) {		
-				Socket sock = server.accept();
-				//res.alert("ACCEPTED!");
-				
-				new Thread(new ConnHandler(sock, res)).start();		
-				
-				//handler.run();
-				//res.alert("RESTARTING LOOP");
-			}
-			server.close();
-		} catch (IOException e) {
-			System.out.println("IOException in init(): " + e.toString());
-			res.error( "IOException in init(): " + e.toString());
-		}
+		// HANDLE QUIT?
 
-		//res.error("QUITING!");
  	}
 }

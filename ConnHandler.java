@@ -72,8 +72,7 @@ class ConnHandler implements Runnable {
 				//InetAddress addr = new InetSocketAddress("127.0.0.1");
 				if (!client.isConnected()) 
 					res.error("failed to connect!!!!!!!");
-				//"127.0.0.1", 2600); //dest, res.PORT);
-				//client.connect(addr, 2600);
+				
 				out = new PrintWriter(client.getOutputStream(), true);
 				in = new BufferedReader(new InputStreamReader(client.getInputStream()));
 			} catch (Exception e) {
@@ -92,13 +91,14 @@ class ConnHandler implements Runnable {
 				"Keep-Alive: 300\r\n" + 
 				"Connection: keep-alive\r\n" +
 				"Content-Type: application/x-www-form-urlencoded; charset=UTF-8\r\n" + 
-				"Referer: http://localhost:2600/client.html\r\n" +
+				"Referer: " + getIPAddress() + ":" + Integer.toString(res.PORT) + "/client.html\r\n" +
 				"Content-Length: " + (all.length()+2) + "\r\n" +
 				"Pragma: no-cache\r\n" + 
 				"Cache-Control: no-cache\r\n" + 
 					"\r\n");
 			out.print(all + "\n\n");
 			out.flush();
+			//res.alert("SENT: " + all);
 			//res.log("sent message");
 			//out.close();
 				
@@ -110,10 +110,12 @@ class ConnHandler implements Runnable {
 			// read http header
 			//res.log("Reading resp header");
 			try {
-				String header = in.readLine();
-				while (header.length() >= 3) {
-					//res.log("header: " + header);
-					header = in.readLine();
+				if (in.ready()) {
+					String header = in.readLine();
+					if (header.length() >= 3) {
+						//res.log("header: " + header);
+						header = in.readLine();
+					}
 				}
 			} catch (Exception e) {
 				res.error("Exception in ajaxCall (reading HTTP response header): " + e.toString());
@@ -223,7 +225,14 @@ class ConnHandler implements Runnable {
 			} else if (cmd.equals("greet")) {
 				response = getIPAddress() + ":" + res.PORT + " " + res.getNodeData("originURL") ;
 			} else if (cmd.equals("getLog")) {
+				res.debug("getLog");
 				ArrayList<String> l = res.getLog();
+				if (l.size() == 0) {
+					res.debug("logWait");
+					res.logWait();
+					l = res.getLog();
+				}
+				res.debug("process Log");
 				response = "";
 				for (int i = l.size()-1; i >= 0; i--) {
 					response +=  l.get(i) + "\n";
@@ -237,7 +246,14 @@ class ConnHandler implements Runnable {
 				res.queueMsg(req.get("req"));	
 				response = "received on " + res.PORT;
 			} else if (cmd.equals("getMsgs")) {
+				res.debug("getMsgs");
 				ArrayList<String> mq = res.getMsgs();
+				if (mq.size() == 0) {
+					res.debug("mqWait");
+					res.mqWait();
+					mq = res.getMsgs();
+				}
+				res.debug("mq process");
 				for(int i =0; i < mq.size(); i++) {
 					response += mq.get(i) + "\n\n";
 				}
