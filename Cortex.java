@@ -63,11 +63,6 @@ public class Cortex extends Applet {
 		//server = 
 		new Thread(new Server(res, getCodeBase().toString(), this)).start();	
 		
-		// be reasonably sure we've secured a valid port
-		try {
-			Thread.sleep(100);
-		} catch (Exception e) { /* meh */ }
-		repaint();
 		
 		// HANDLE QUIT?
 
