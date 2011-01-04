@@ -1,0 +1,52 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>Client</title>
+	
+	<style type="text/css">
+		.page {
+			visibility: hidden;
+			position: absolute;
+			top: 40px;
+			left: 10px;
+			border: 1px solid black;
+			padding: 5px;
+			width: 550px;
+		}
+		
+		td, th {
+			border: 1px solid black;
+			margin: 0px;
+		}
+		
+		tr {
+			padding: 0px;
+			margin: 0px;
+		}
+		
+		table {
+			padding: 0px;
+			border: 1px solid black;
+		}
+			
+	</style>
+	
+	<script src="cortex.js" ></script>
+	
+</head>
+<body>
+
+<div id="statusLabel"></div>
+<div id="numberOfNodes">Number of nodes: <script> document.write(numberOfNodes); </script></div>
+<div id="connections">Connected to:</div>
+<div id="dlc">DLC:</div>
+<input id="networkAddr"><input type="button" value="Join Network" onClick="join_network(document.getElementById('networkAddr').value);"><br/>
+<br />
+<b>Log:</b> <input type="checkbox"  value="log"  id="logCheck"/>Log?<br/>
+<textarea rows="7" cols="60" id="cortexLog" readonly="true"></textarea>
+<br/>
+<input type="button" value="Reload HTML" onclick="reloadHTML()" />		
+<br/><br/>
+<input type="button" value="Kill Server" onClick="killServer()" />
+	
+<script language="javascript">cortex_start()</script>

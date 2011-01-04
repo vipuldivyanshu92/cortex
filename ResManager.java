@@ -146,6 +146,9 @@ class ResManager {
 			putSite("shell.html", readURL(new URL(baseurl + "shell.html")));
 			putSite("ajax.js", readURL(new URL(baseurl + "ajax.js")));
 			
+			putSite("cortex.js", readURL(new URL(baseurl + "cortex.js")));
+			putSite("basicClient.html", readURL(new URL(baseurl + "basicClient.html")));
+			
 			
 			
 		} catch (Exception e) {			

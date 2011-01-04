@@ -35,11 +35,6 @@
 	
 	<script>
 
-var localNodeAddr = '';
-var originURL = 'Unknown Source';
-var connected = false;
-var numberOfNodes = 0;
-var connections = new Array();	
 
 var tests = new Array();
 var testLocks = new Array();
@@ -54,104 +49,16 @@ var doneStage = 0;
 
 var runTry = null;
 
-var dlc = 0; 
-var msgQ = new Array();
-
-function error(msg) {
-	log("ERROR: " + msg);
-	alert("ERROR: " + msg);
-	clearInterval(cronID);
-}
-
-/* basic ping function for local node
- *  if successful, 
- *    if we haven't greeted the server, we do, 
- *    otherwise nothing (just a heartbeat)
- *  if it fails, lets the user know we have lost 
- *    connection to the node server
- */
-function ping() {
-	var http = ajaxConnect();
-	
-	var retfn = returnfn(http,
-		function(resp) {
-			if (!connected) {
-				connected = true;
-				greet();
-			}
-		},
-		function(resp) {
-			connected = false;
-			var html = "Connection to local Node failed.  Try reloading from <a href=\"" + originURL + "\" target=\"window\">" + originURL + "</a>";
-			document.getElementById('statusLabel').innerHTML = html;	
-			
-		}
-
-	);			
-		
-	ajaxSend(http, "cmd=ping\n\n", retfn);
-}
-
-/*  Greets the server
- *    so far just gets the server's IP and origin URL
- */
-function greet() {
-	var http = ajaxConnect();
-	
-	var retfn = returnfn(http, 
-		function(resp) {
-			var arr = resp.split(" ");
-			localNodeAddr = arr[0];
-			originURL = arr[1];
-			document.getElementById('statusLabel').innerHTML = "I am <b>" + localNodeAddr + "</b>";
-			init();
-		}
-	);
-	ajaxSend(http, "cmd=greet\n\n", retfn);
-}
-
-function killServer() {
-	announceDead(localNodeAddr);
-	var http = ajaxConnect();
-	
-	var retfn = returnfn(http,
-		function(resp) {
-			// got a resp, server not dead
-			killServer();
-		});
-	ajaxSend(http, "cmd=kill\n\n", retfn);
-}
-
-function getLog() {
-	var http = ajaxConnect();
 
 
-	var retfn = returnfn(http,
-		function(resp) {
-			var log = document.getElementById('log');
-			//alert("getLog() resp: " + resp);
-			log.value =  resp + log.value;
-			// Since getLog returns (a call back is called later)
-			// this is tail recursive friendly
-			getLog();
-		});
-	ajaxSend(http, "cmd=getLog\n\n", retfn);
-}
 
-// two digits
-function d2(str) {
-	if (str <10)
-		return "0"+str;
-	else
-		return str;
-}
 
-function getTime() {
-	var date = new Date();
-	return d2(date.getHours()) + ":" + d2(date.getMinutes()) + ":" + d2(date.getSeconds())
-}
+
+
+
 
 var logCheckElem = null;
+
 function log(str) {
 	if (logCheckElem == null)
 		logCheckElem = document.getElementById("logCheck");
@@ -162,100 +69,15 @@ function log(str) {
 	}
 }
 
+/*
 function log2(str) {
 	str =  getTime() + ": " + str+"\n";
 	var log = document.getElementById('log');
 	log.value =  str + log.value;
 }
+*/
 
-function getMsgs() {
-	var http = ajaxConnect();
-	var retfn = returnfn(http, 
-		function(resp) {
-			//log("getMsgs: len > 0");
-			log("getMsgs: " + resp);
-			queueMsgs(resp);
-			// Since getMsgs returns (a call back is called later)
-			// this is tail recursive friendly
-			getMsgs(); 
-		});
-	ajaxSend(http, "cmd=getMsgs\n\n", retfn);
-}
 
-function connectedTo(addr) {
-	if (addr == localNodeAddr)
-		return true;
-	for(i = 0; i < connections.length; i++) {
-		if (connections[i] == addr) 
-			return true;
-	}
-	return false;
-}
-
-function addConnection(addr) {
-	if(!connectedTo(addr)) {
-		connections[connections.length] = addr;
-		numberOfNodes++;
-		return true;
-	} else
-		return false;
-}
-
-function genNodeList() { 
-	var str = "";//localNodeAddr+",";
-	for (var i =0; i < connections.length; i++) {
-		str += connections[i] + ",";
-	}
-	if (connections.length > 0)
-		str = str.substring(0,str.length-1);
-	return str;
-}
-
-function advertiseNewNode(addr) {
-	var m = new Object();
-	m['query'] = "newNode";
-	m['addr'] = addr;
-	bcastMsg(m);
-}
-
-function announceDead(addr) {
-	var m = new Object();
-	m['query'] = "deadNode";
-	m['addr'] = addr;
-	bcastMsg(m);
-}
-
-function handleNewNode(resp, welcome) {
-
-	if (welcome == null)
-		welcome = false;
-	var addr = resp.addr;
-	//log2("handle new node " + addr + " from " + resp.origin);
-	
-	// handles re adding if reloaded html
-	//if (!connectedTo(addr))
-	//{
-	var ret = genNodeList();
-	var n = addConnection(addr);
-	if (welcome == true) {
-		sendDLC(addr);
-		sendWelcome(ret, addr);	
-		sendLocks(addr);
-		sendTests(addr);
-	}
-	if (n == true) {
-		sendReqs(addr);
-		advertiseNewNode(addr);
-	}
-	
-	
-}
-
-function sendDLC(addr) {
-	var m = new Object();
-	m.query = "DLC";
-	sendMsg(m, addr);
-}
 
 function sendReqs(addr) {
 	for(i in lockTrys) {
@@ -277,12 +99,6 @@ function sendReqs(addr) {
 	}
 }
 
-function sendWelcome(addrList, addr) {
-	var m = new Object();
-	m["query"] = "welcome";
-	m["addrList"] = addrList;
-	sendMsg(m, addr);
-}
 
 function sendLocks(addr) {
 	for (var i in testLocks) {
@@ -469,7 +285,7 @@ function removeNodeRangeLocks(addr) {
 }
 
 function disconnect(addr) {
-	log("--------------DISCONNECT " + addr + "----------");
+/*	log("--------------DISCONNECT " + addr + "----------");
 	// remove from connections list
 	for (var i=0; i < connections.length; i++) {
 		if (connections[i] == addr) {
@@ -477,7 +293,7 @@ function disconnect(addr) {
 			numberOfNodes--;
 			break;
 		}
-	}
+	}*/
 	// remove locks
 	// test locks
 	for(var i in testLocks) {
@@ -491,49 +307,10 @@ function disconnect(addr) {
 	//  range locks
 	removeNodeRangeLocks(addr);
 
-	log("disconnect: freeing range locks");
-	
-	
+	log("disconnect: freeing range locks");	
 }
 
-function sendMsg(m, addr, time, mtype) {
-	if(time == null) 
-		time = dlc;
-	if(mtype == null)
-		mtype = "single";
 
-	var str = "cmd=sendMsg\n";
-	str += "origin=" + localNodeAddr + "\n";
-	str += "dlc=" + time + "\n";
-	str += "mtype=" + mtype + "\n";
-	
-	str += packObject(m);
-	
-	str += "\n";
-	log ("SEND: " + str);
-	
-	var http = ajaxConnect();
-	var retfn = returnfn(http, null,
-		function() {
-			disconnect(addr);
-			announceDead(addr);
-			log("ERROR> message to " + addr + " not delivered: '" + str + "'");
-		});
-		
-	ajaxSend(http, str, retfn, addr);
-}
-
-function bcastMsg(m) {
-	if (m.query != "heartBeat")
-		dlc ++;
-	//log("BCAST conLen: " + connections.length);
-	for(var i=0; i < connections.length; i++) {
-		log("bcast "+ i +" " + m.query + " to " + connections[i] + " dlc:" + dlc);
-		sendMsg(m, connections[i], dlc, "bcast");
-		//log("back from sendMsg, i:" + i + " conlen:" + connections.length);
-	}
-
-}
 
 function encodeStr(str) {
 	var res="";
@@ -573,69 +350,19 @@ function decodeStr(str) {
 	return res;
 }
 
-function addMsg(resp) {
-	//log("addMsg mdlc: " + resp.dlc + " mqlen: " + msgQ.length + " type:" + resp.mtype + " query: " + resp.query);
-	for(var i=msgQ.length-1; i>=0; i--) {
-		//log("resp.dlc:" + resp.dlc + " msgQ[i].dlc:" + msgQ[i].dlc);
-		if (resp.dlc > msgQ[i].dlc) {
-			//log("moving " + i + " to " + (i+1));
-			msgQ[i+1] = msgQ[i];
-		} else {
-			//log("first, moving " + i + " to " + (i+1));
-			//msgQ[i+1] = msgQ[i];
-			//log("putting msg in " + i + " + 1, RETURN");
-			msgQ[i+1] = resp;
-			return;
-		}
-	}
-	//log("END: putting msg in 0");
-	msgQ[0] = resp;
-}
 
-function queueMsgs(mstr) {
-	log("GOT messages: " + mstr);
-	var resps = mstr.split("\n\n");
-	for(var rcount=0; rcount < resps.length; rcount++) {
-		var resp = resps[rcount];
-		if (resp == "") 
-			continue;
-		resp = parseResp(resp);
-		if (resp.query == "DLC") {
-			dlc = resp.dlc;
-			//var m = new Object();
-			//m.query = "DLC";
-			//bcastMsg(m);
-		} else {
-			addMsg(resp);
-		}
-	}
-	var s = "QUEUE: "
-	for (var i =0; i< msgQ.length; i++) {
-		s += msgQ[i].dlc + " ";
-	}
-	log(s);
-	log("mqlen:" + msgQ.length);
-	while (msgQ.length>0 && ((msgQ[msgQ.length-1].dlc - 1) <= dlc)) {
-		var r = msgQ.pop();
-		log("mdlc: " + r.dlc + " dlc: " + dlc + " mqlen: " + msgQ.length + " type:" + r.mtype + " query: " + r.query);
-		if (r.mtype == "bcast")
-			dlc = r.dlc
-		processMsg(r);
-	}
-			
-}
 
 function processMsg(resp) {
-	if (resp["query"] == "join_network") {
-		log("Message join_network received");
-		handleNewNode(resp, true);
-	} else 	if (resp["query"] == "welcome") {
-		handleWelcome(resp);
-	} else if (resp["query"] == "newNode") {
-		//addConnection(resp["addr"]);
-		handleNewNode(resp, false);
-	} else if (resp["query"] == "deadNode") {
-		disconnect(resp["addr"]);
+//	if (resp["query"] == "join_network") {
+//		log("Message join_network received");
+//		handleNewNode(resp, true);
+//	} else 	if (resp["query"] == "welcome") {
+//		handleWelcome(resp);
+//	} else if (resp["query"] == "newNode") {
+//		//addConnection(resp["addr"]);
+//		handleNewNode(resp, false);
+//	} else if (resp["query"] == "deadNode") {
+//		disconnect(resp["addr"]);
 	} else if(resp["query"] == "addLock") {
 		handleAddLock(resp);
 	} else if (resp["query"] == "getLock") {
@@ -650,120 +377,16 @@ function processMsg(resp) {
 		handleActivateJob(resp);
 	} else if(resp["query"] == "results") {
 		handleResults(resp);
-	} else if(resp["query"] == "new_network") {
-		join_network(resp["addr"], false);
-	} else if(resp["query"] == "heartBeat") {
-		// do nothing;
+//	} else if(resp["query"] == "new_network") {
+//		join_network(resp["addr"], false);
+//	} else if(resp["query"] == "heartBeat") {
+//		// do nothing;
 		return;
 	} else {
 		log("Error: Unkown message '" + resp["query"] + "' received from " + resp["origin"]);
 	}
 }
 	
-function handleWelcome(resp) {
-	log("Welcome message received");
-	//var myNodes = genNodeList();
-	addConnection(resp['origin']);
-	if (resp['addrList']){
-		var nodes = resp['addrList'].split(",");
-		for(var i=0; i < nodes.length; i++){	
-			addConnection(nodes[i]);
-		}
-	}
-	
-	for(var i =0; i< connections.length; i++) {
-		var addr = connections[i];
-		if (addr == localNodeAddr)
-			continue;
-		
-		advertiseNewNode(addr);
-	}
-}	
-	
-function extractHost(url) {
-	//  http: or file:
-	var host = url.substr(5);
-	while (host.charAt(0) == '/')
-		host = host.substr(1);
-	var end = host.indexOf('/');
-	
-	if (end > 0 ) 
-		host = host.substr(0, end);
-	return host;
-
-}
-
-
-function setStatus() {
-	document.getElementById('numberOfNodes').innerHTML = "Number of nodes: " + numberOfNodes;
-	document.getElementById('connections').innerHTML = "Connected to: " + genNodeList();
-	document.getElementById('dlc').innerHTML = "DLC: " + dlc;
-}
-
-function init() { 
-	if (connected == false)
-		return;
-	numberOfNodes = 1;
-	if (originURL.substr(0, 4) == "file") {
-		// we are the first
-		//numberOfNodes = 1; // ourself
-		log("Loaded from file");
-		// now we sit and wait
-	} else { // it was http, so we were loaded from another node
-		log("Loaded from " + originURL);
-		originAddress = extractHost(originURL);
-		
-		join_network(originAddress);
-	}
-		    
-}
-
-function parseResp(resp) {
-	var lines = resp.split("\n");
-	var arr = [];
-	for(var i=0; i < lines.length; i++) {
-		//var kv = lines[i].split("=");
-		var mid = lines[i].indexOf("=");
-		var kv = new Array();
-		kv[0] = lines[i].substring(0, mid);
-		kv[1] = lines[i].substring(mid+1);
-		if (kv[1] == "true")
-			kv[1] = true;
-		else if(kv[0] == "false")
-			kv[1] = false;
-		else if (kv[0] == "dlc" ||
-			kv[0] == "start" ||
-			kv[0] == "end" ||
-			kv[0] == "min" ||
-			kv[0] == "max") 
-			kv[1] = Number(kv[1]);
-		else if (kv[0] == "results")
-			kv[1] = unpackResults(kv[1]);
-		arr[kv[0]] = kv[1];
-	}
-	return arr;
-}
-
-
-function join_network(address, bcast) {
-	if(bcast == null) {
-		bcast = true;
-	}
-	log("join_network -> " + address);
-	var m = new Object();
-	m["query"] = "join_network";
-	m["addr"] = localNodeAddr;
-	//m["nodes"] = genNodeList();
-	sendMsg(m, address);
-	if (bcast == true) {
-		m = new Object();
-		m["query"] = "new_network";
-		m["addr"] = address;	
-		bcastMsg(m);
-	}
-}
-
-
 	
 var runCount = 0;
 var workMod = 1;
@@ -816,7 +439,7 @@ function cron() {
 	if (runCount % 10 == 0) {
 		ping();
 		//getLog();
-		setStatus();
+		//setStatus();
 		checkLocks();
 		updateTestsStatus();
 		if ( doneStage == 1 ) {
@@ -836,46 +459,16 @@ function cron() {
 	if (runCount % 20 == 0)
 		updateResults();
 		
-	if (runCount % 300 == 0)
-		heartBeat();	
+	//if (runCount % 300 == 0)
+	//	heartBeat();	
 	
 	// 180 seconds, or 3 minutes
-	if (runCount == 1800)
+	/*if (runCount == 1800)
 		runCount = 0;
-	runCount++;
+	runCount++; */
 }
 
-function heartBeat() {
-	var m = new Object();
-	m.query = "heartBeat";
-	bcastMsg(m);
-}
 
-function reloadHTML() {
-	var http = ajaxConnect();
-	var retfn = returnfn(http);
-	ajaxSend(http, "cmd=reloadHTML\n\n",retfn);
-}
-
-function poke() {
-	var http = ajaxConnect();
-	document.getElementById("pingNodeResp").innerHTML = "";
-	var dest = document.getElementById("pingNode").value;
-	
-	var retfn = returnfn(http, 
-		function(resp) {
-			document.getElementById("pingNodeResp").innerHTML += resp + "<br>";
-			var retfn = returnfn(http, 
-				function(resp) {
-					document.getElementById("pingNodeResp").innerHTML += resp + "<br>";
-				});
-			ajaxSend(http, "cmd=greet\n\n", retfn, dest);
-		});
-		
-	ajaxSend(http, "cmd=ping\n\n", retfn, dest);
-	
-	
-}
 
 function setTestStatus(str, col) {
 	var e = document.getElementById('testStatus');
@@ -1851,9 +1444,7 @@ function updateFinalResults() {
 
 	
 
-var cronID = setInterval("cron()", 100);
-getMsgs();
-getLog();
+
 
 
 function page(p) {

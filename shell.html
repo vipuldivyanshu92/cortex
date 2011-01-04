@@ -8,19 +8,9 @@
 	<script>
 		function load() {
 			port = document.getElementById('port').value;
-			document.getElementById('client').src = "http://localhost:" + port + "/client.html";
+			document.getElementById('client').src = "http://localhost:" + port + "/basicClient.html";
 		}
-		
-		function isLoaded() {
-			if(document.getElementById('cortex').isActive())
-			{
-				load();
-				clearInterval();
-			}
-		}
-		
-		
-	
+			
 	</script>
 </head>
 <body>
