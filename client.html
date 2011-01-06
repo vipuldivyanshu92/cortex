@@ -248,26 +248,7 @@ function packResults(res) {
 	return str;
 }
 
-function packObject(m, defaultValue) {
-	
-	var str = "";
-	for (var i in m) {
-		if (m[i] == '')
-		{
-			if (defaultValue == null) {
-				continue;
-			} else {
-				m[i] = defaultValue;
-			}
-		}
-		if (i == "results") {
-			str += i + "=" + packResults(m[i]) + "\n";
-		} else {
-			str += i + "=" + m[i] + "\n";
-		}
-	}
-	return str;
-}
+
 
 function removeNodeRangeLocks(addr) {
 	for(var i in rangeLocks) {

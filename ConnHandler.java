@@ -340,7 +340,7 @@ class ConnHandler implements Runnable {
 						userAgent = header;
 						
 					}
-					System.out.println(i + ": '" + header + "'");
+					//System.out.println(i + ": '" + header + "'");
 					i++;
 					header = sin.readLine();
 				}
@@ -353,6 +353,7 @@ class ConnHandler implements Runnable {
 				byte[] get_resp= null;
 				String  CODE = "200 OK";
 				int resp_length = 0;
+				String content_type = "text/html";
 				if (type == TYPE_GET) {
 					reqLine = reqLine.substring(4);
 					res.log("GET " + reqLine);
@@ -361,6 +362,11 @@ class ConnHandler implements Runnable {
 						CODE = "404 Not Found";
 					}
 					resp_length = get_resp.length;
+					String end = reqLine.substring(reqLine.length()-4);
+					if (end == ".js")
+						content_type = "text/javascript";
+					else if (end == "css")
+						content_type= "text/css";
 				} else {
 					// No forward
 					if (reqLine.equals("")) {
@@ -385,7 +391,7 @@ class ConnHandler implements Runnable {
 				SimpleDateFormat formater = new SimpleDateFormat("E, d M y H:m:s z");		
 				sout.print("HTTP/1.1 " + CODE + "\r\n"+
 					"Date: " + 					formater.format(now) + "\r\n" +
-					"Content-Type: text/html; charset=UTF-8\r\n" +
+					"Content-Type: " + content_type + "; charset=UTF-8\r\n" +
 					"Server: Cortex @ " + Integer.toString(res.PORT) + "\r\n");
 
 				// Print response

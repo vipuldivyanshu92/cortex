@@ -97,8 +97,7 @@ function extractHost(url) {
 
 }
 
-//var logCheckElem = null;
-var logging = false;
+var logging = false
 
 function log(str) {
 	//if (logCheckElem == null)
@@ -141,6 +140,7 @@ function ping() {
 	
 	var retfn = returnfn(http,
 		function(resp) {
+			//log("pong!");
 			if (!connected) {
 				connected = true;
 				greet();
@@ -149,17 +149,19 @@ function ping() {
 		function(resp) {
 			connected = false;
 			var html = "Connection to local Node failed.  Try reloading from <a href=\"" + originURL + "\" target=\"window\">" + originURL + "</a>";
+			
 			stl = document.getElementById('statusLabel');
 			if (stl)
 				stl.innerHTML = html;	
 		}
 
 	);			
-		
+	//log("ping!");		
 	ajaxSend(http, "cmd=ping\n\n", retfn);
 }
 
 function init() { 
+	log("init");
 	if (connected == false)
 		return;
 	numberOfNodes = 1;
@@ -183,6 +185,7 @@ function greet() {
 	
 	var retfn = returnfn(http, 
 		function(resp) {
+			log("greet returned");
 			var arr = resp.split(" ");
 			localNodeAddr = arr[0];
 			originURL = arr[1];
@@ -192,6 +195,7 @@ function greet() {
 			init();
 		}
 	);
+	log("send greet msg");
 	ajaxSend(http, "cmd=greet\n\n", retfn);
 }
 
@@ -250,10 +254,35 @@ function getMsgHandler(msgName) {
 function processMsg(resp) {
 	handler = getMsgHandler(resp["query"]);
 	if (handler) {
-		handler(resp);
+		i=0;
+		while(handler[i]) {
+			handler[i](resp);
+			i++;
+		}
 	} else {
 		log("Error: Unkown message '" + resp["query"] + "' received from " + resp["origin"]);
 	}
+}
+
+function packObject(m, defaultValue) {
+	
+	var str = "";
+	for (var i in m) {
+		if (m[i] == '')
+		{
+			if (defaultValue == null) {
+				continue;
+			} else {
+				m[i] = defaultValue;
+			}
+		}
+		if (i == "results") {
+			str += i + "=" + packResults(m[i]) + "\n";
+		} else {
+			str += i + "=" + m[i] + "\n";
+		}
+	}
+	return str;
 }
 
 function sendMsg(m, addr, time, mtype) {
@@ -270,7 +299,7 @@ function sendMsg(m, addr, time, mtype) {
 	str += packObject(m);
 	
 	str += "\n";
-	log ("SEND: " + str);
+	//log ("SEND: " + str);
 	
 	var http = ajaxConnect();
 	var retfn = returnfn(http, null,
@@ -279,7 +308,7 @@ function sendMsg(m, addr, time, mtype) {
 			announceDead(addr);
 			log("ERROR> message to " + addr + " not delivered: '" + str + "'");
 		});
-		
+	//log("sendMsg: " + str);	
 	ajaxSend(http, str, retfn, addr);
 }
 
@@ -372,12 +401,16 @@ function getMsgs() {
 	var http = ajaxConnect();
 	var retfn = returnfn(http, 
 		function(resp) {
-			log("getMsgs: " + resp);
+			//log("getMsgs: " + resp);
 			queueMsgs(resp);
 			// Since getMsgs returns (a call back is called later)
 			// this is tail recursive friendly
 			getMsgs(); 
+		},
+		function() {
+			log("ERROR: getMsg RETURN FAIL");
 		});
+	log("getMsgs");
 	ajaxSend(http, "cmd=getMsgs\n\n", retfn);
 }
 
@@ -549,10 +582,10 @@ function (resp) {
 	}
 });
 
-addMessageHandler( "deadNode", 
+addMsgHandler( "deadNode", 
 function (resp) {
 	var addr = resp['addr'];
-	log("--------------DISCONNECT " + addr + "----------");
+	log("DISCONNECT " + addr);
 	// remove from connumberOfNodesnections list
 	for (var i=0; i < connections.length; i++) {
 		if (connections[i] == addr) {
@@ -563,12 +596,12 @@ function (resp) {
 	}	
 });
 
-addMessageHandler( "new_network", 
+addMsgHandler( "new_network", 
 function (resp) {
 	join_network(resp["addr"], false);
 });
 
-addMessageHandler( "heartBeat",
+addMsgHandler( "heartBeat",
 function (resp) {
 	// do nothing
 });
@@ -576,23 +609,23 @@ function (resp) {
 
 /***** CRON System *****/
 
-var cronTabs = new Array();
+var crontabs = new Array();
 
 /* add a function to be called repeatedly
  *  interval - in 1/10s of a second
  * fn - function to be called
  */
 function addCronTab(interval, fn) {
-	tab = cronTabs[interval];
+	tab = crontabs[interval];
 	if (!tab) {
 		crontabs[interval] = [fn, null];
 	} else {
 		i = 0;
-		while(crontabs[i]) {
+		while(tab[i]) {
 			i++;
 		}
-		crontabs[i] = fn;
-		crontabs[i+1]=null;
+		tab[i] = fn;
+		tab[i+1]= null;
 	}
 }
 
@@ -602,24 +635,26 @@ function cron() {
 	if (connected == false)
 		return;
 	
-	for (time in cronTabs) {
-		i = Number(time);
-		if (cronI % i == 0) {
-			tab = cronTabs[time];
+	for (time in crontabs) {
+		if (cronI % Number(time) == 0) {
+			tab = crontabs[time];
 			j=0;
-			while(tab[j]) {
+			while(tab[j]) {  // cannot read proprty '0' of null
 				tab[j]();
+				j++;
 			}
 		}
 	}
-	cronI++;
+	
+	cronI += 1;
 	// Reset to 0 after a day
-	if (cronI >  86400) {
+	if (cronI >  864000) {
 		cronI = 0;
-}
+	}
+}	
 
 addCronTab(10, ping);
-addCronTab(300, heatbeat);
+addCronTab(300, heartBeat);
 
 
 /***** UI *****/
@@ -631,7 +666,7 @@ function setStatus() {
 	if (c)
 		c.innerHTML = "Connected to: " + genNodeList();
 	var dlcE = document.getElementById('dlc');
-	if (dlvE)
+	if (dlcE)
 		dlcE.innerHTML = "DLC: " + dlc;
 }		
 
@@ -639,9 +674,17 @@ addCronTab(10, setStatus);
 
 /**** INIT *****/
 
-function cortex_start() {
+function cortex_start(debug) {
+	if(debug)
+		logging = true;
 	ping();
 	var cronID = setInterval("cron()", 100);
 	getMsgs();
 	getLog();
 }
+
+
+/********** AND THAT's THE BASIS OF THE CORTEX P2P NETWORK **********/
+/* We now have dumb do nothing nodes that can connect to each other
+ * and maintain state */
+/********** NOW TO ADD SOME USEFUL THINGS ON TOP OF IT **********/
