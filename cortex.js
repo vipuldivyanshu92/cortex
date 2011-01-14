@@ -1,4 +1,5 @@
 /* cortex.js
+ * PURPOSE
  * AUTHOR
  * LICENSE
  *

@@ -38,8 +38,7 @@
 
 var tests = new Array();
 var testLocks = new Array();
-var lockTrys = new Array();
-var myLocks = new Array();
+
 var runningTests = new Array();
 
 var rangeLocks = new Array();
@@ -52,53 +51,7 @@ var runTry = null;
 
 
 
-
-
-
-
-
-var logCheckElem = null;
-
-function log(str) {
-	if (logCheckElem == null)
-		logCheckElem = document.getElementById("logCheck");
-	if (logCheckElem.checked == true) {
-		str =  getTime() + ": " + str+"\n";
-		var log = document.getElementById('log');
-		log.value =  str + log.value;
-	}
-}
-
 /*
-function log2(str) {
-	str =  getTime() + ": " + str+"\n";
-	var log = document.getElementById('log');
-	log.value =  str + log.value;
-}
-*/
-
-
-
-function sendReqs(addr) {
-	for(i in lockTrys) {
-		var lock = lockTrys[i];
-		if (lock == null)
-			continue;
-			
-		var m = new Object();
-		m["query"] = "getLock";
-		m["type"] = i;
-		m["name"] = lock["name"];
-		m["time"] = lock.time;
-		m["addr"] = localNodeAddr;
-		if (i == "range") {
-			m["start"] = lock.start;
-			m["end"] = lock.end;
-		}
-		sendMsg(m, addr);
-	}
-}
-
 
 function sendLocks(addr) {
 	for (var i in testLocks) {
@@ -143,7 +96,7 @@ function sendLocks(addr) {
 			r = r.next;
 		}
 	}
-}
+} */
 
 function sendTests(addr) {
 	for(var i in tests) {
@@ -152,6 +105,7 @@ function sendTests(addr) {
 	}
 }
 
+/*
 function handleAddLock(resp) {
 	if(resp['locked'] == null) 
 			resp['locked'] = false;
@@ -177,6 +131,7 @@ function handleAddLock(resp) {
 		lock.name = resp['name'];
 	}
 }
+*/
 
 function packArray(arr) {
 	if (arr instanceof Object) {
