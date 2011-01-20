@@ -229,12 +229,58 @@ function getLog() {
 	ajaxSend(http, "cmd=getLog\n\n", retfn);
 }
 
+/***** Function Registry *****/
+
+var fnreg = new Array;
+
+function registerFn(fnname, fn, preplace) {
+	path = fnname.split(".");
+	root = fnreg;
+	for(i=0; i < path.length()-1; i++) {
+		if (root[path[i]] == undefined)
+			root[path[i]] = new Array();
+		root = root[path[i]];
+	}
+	if (preplace)
+		root[path[i]] = fn;
+	else {
+		if (root[path[i]] == undefined)
+			root[path[i]] = [fn, null];
+		else {
+			j=0;
+			while(root[path[i]][j] != null) 
+				j++;
+			root[path[i]][j] = fn;
+			root[path[i]][j+1] = null;
+		}
+	}	
+}
+	
+
+function execFn(name, args) {
+	root = fnreg;
+	names = name.split(".");
+	for (i=0; i< names.length-1; i++) {
+		root = root[names[i]];
+		if (root == undefined)
+			return false;  // ERROR, NO FN	
+	}
+	i=0;
+	while(root[i]) {
+		root[i](args);
+		i++;
+	}
+	return true;
+}
+
+
 /***** Messeging between nodes *****/
 
 var msgHandlers = new Array();
 
+
 function addMsgHandler(msgName, handlerFN, handlerReplace) {
-	e = msgHandlers[msgName];
+	/*e = msgHandlers[msgName];
 	if (!e || handlerReplace) {
 		msgHandlers[msgName] = [handlerFN, null];
 	} else {
@@ -244,7 +290,8 @@ function addMsgHandler(msgName, handlerFN, handlerReplace) {
 		}
 		e[i] = handlerFN;
 		e[i+1] = null;
-	}
+	}*/
+	registerFn("msgHandler." + msgName, handlerFN, handlerReplace);
 }
 
 function getMsgHandler(msgName) {
@@ -253,16 +300,8 @@ function getMsgHandler(msgName) {
 
 
 function processMsg(resp) {
-	handler = getMsgHandler(resp["query"]);
-	if (handler) {
-		i=0;
-		while(handler[i]) {
-			handler[i](resp);
-			i++;
-		}
-	} else {
-		log("Error: Unkown message '" + resp["query"] + "' received from " + resp["origin"]);
-	}
+	if (!execFn("msgHandler." + resp["query"], resp)) 
+		log("Error: Uknnown message '" + resp['query'] + "'");
 }
 
 function packObject(m, defaultValue) {
