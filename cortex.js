@@ -258,10 +258,11 @@ function registerFn(fnname, fn, preplace) {
 	
 
 function execFn(name, args) {
+	log("exec '" + name + "'");
 	root = fnreg;
 	names = name.split(".");
 	for (i=0; i< names.length; i++) {
-		log("Looking at " + root + " for " + names[i]);
+		log("looking for " + i +":"+names[i] + " in " + root.length + " nodes");
 		root = root[names[i]];
 		if (root == undefined)
 			return false;  // ERROR, NO FN	
@@ -279,28 +280,10 @@ function execFn(name, args) {
 
 /***** Messeging between nodes *****/
 
-var msgHandlers = new Array();
-
 
 function addMsgHandler(msgName, handlerFN, handlerReplace) {
-	/*e = msgHandlers[msgName];
-	if (!e || handlerReplace) {
-		msgHandlers[msgName] = [handlerFN, null];
-	} else {
-		i = 0;
-		while (e[i] != null) {
-			i++;
-		}
-		e[i] = handlerFN;
-		e[i+1] = null;
-	}*/
 	registerFn("msgHandler." + msgName, handlerFN, handlerReplace);
 }
-
-function getMsgHandler(msgName) {
-	return msgHandlers[msgName];
-}
-
 
 function processMsg(resp) {
 	log("processMsg: " + resp['query']);
@@ -653,6 +636,7 @@ function (resp) {
 
 /***** CRON System *****/
 
+// list of intervals
 var crontabs = new Array();
 
 /* add a function to be called repeatedly
@@ -660,17 +644,8 @@ var crontabs = new Array();
  * fn - function to be called
  */
 function addCronTab(interval, fn) {
-	tab = crontabs[interval];
-	if (!tab) {
-		crontabs[interval] = [fn, null];
-	} else {
-		i = 0;
-		while(tab[i]) {
-			i++;
-		}
-		tab[i] = fn;
-		tab[i+1]= null;
-	}
+	crontabs[interval] = true;
+	registerFn("cron."+interval, fn);
 }
 
 var cronI = 0;
@@ -681,12 +656,7 @@ function cron() {
 	
 	for (time in crontabs) {
 		if (cronI % Number(time) == 0) {
-			tab = crontabs[time];
-			j=0;
-			while(tab[j]) {  // cannot read proprty '0' of null
-				tab[j]();
-				j++;
-			}
+			execFn("cron."+ time, null);
 		}
 	}
 	
