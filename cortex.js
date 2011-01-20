@@ -258,19 +258,15 @@ function registerFn(fnname, fn, preplace) {
 	
 
 function execFn(name, args) {
-	log("exec '" + name + "'");
 	root = fnreg;
 	names = name.split(".");
 	for (i=0; i< names.length; i++) {
-		log("looking for " + i +":"+names[i] + " in " + root.length + " nodes");
 		root = root[names[i]];
 		if (root == undefined)
 			return false;  // ERROR, NO FN	
 	}
 	i=0;
-	log("found functions");
 	while(root[i]) {
-		log("exec " + i);
 		root[i](args);
 		i++;
 	}
