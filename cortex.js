@@ -98,7 +98,7 @@ function extractHost(url) {
 
 }
 
-var logging = false
+var logging = true
 
 function log(str) {
 	//if (logCheckElem == null)
@@ -236,7 +236,7 @@ var fnreg = new Array;
 function registerFn(fnname, fn, preplace) {
 	path = fnname.split(".");
 	root = fnreg;
-	for(i=0; i < path.length()-1; i++) {
+	for(i=0; i < path.length-1; i++) {
 		if (root[path[i]] == undefined)
 			root[path[i]] = new Array();
 		root = root[path[i]];
@@ -260,13 +260,16 @@ function registerFn(fnname, fn, preplace) {
 function execFn(name, args) {
 	root = fnreg;
 	names = name.split(".");
-	for (i=0; i< names.length-1; i++) {
+	for (i=0; i< names.length; i++) {
+		log("Looking at " + root + " for " + names[i]);
 		root = root[names[i]];
 		if (root == undefined)
 			return false;  // ERROR, NO FN	
 	}
 	i=0;
+	log("found functions");
 	while(root[i]) {
+		log("exec " + i);
 		root[i](args);
 		i++;
 	}
@@ -300,6 +303,7 @@ function getMsgHandler(msgName) {
 
 
 function processMsg(resp) {
+	log("processMsg: " + resp['query']);
 	if (!execFn("msgHandler." + resp["query"], resp)) 
 		log("Error: Uknnown message '" + resp['query'] + "'");
 }
