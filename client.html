@@ -204,7 +204,7 @@ function packResults(res) {
 }
 
 
-
+/*
 function removeNodeRangeLocks(addr) {
 	for(var i in rangeLocks) {
 		log("freeing " + i + " locks");
@@ -219,6 +219,7 @@ function removeNodeRangeLocks(addr) {
 		}
 	}
 }
+*/
 
 function disconnect(addr) {
 /*	log("--------------DISCONNECT " + addr + "----------");
@@ -241,7 +242,7 @@ function disconnect(addr) {
 		}
 	}
 	//  range locks
-	removeNodeRangeLocks(addr);
+	//removeNodeRangeLocks(addr);
 
 	log("disconnect: freeing range locks");	
 }

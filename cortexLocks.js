@@ -72,3 +72,28 @@ function handleAddLock(resp) {
 	}
 }
 
+
+
+function removeNodeRangeLocks(addr) {
+	for(var i in rangeLocks) {
+		log("freeing " + i + " locks");
+		var rlock = rangeLocks[i];
+		while (rlock != null) {
+			log("looking at " + i + " (" + rlock.start + " to " + rlock.end + ") : " + rlock.addr);
+			if (rlock.addr == addr) {
+				log("unlocking");
+				rlock.locked = false;
+			}
+			rlock = rlock.next;
+		}
+	}
+}
+
+function removeNodeLocks(addr) {
+	removeNodeRangeLocks(resp['addr']);
+}
+
+addMsgHandler("deadNode", 
+function (resp) {
+	removeNodeLocks(resp['addr']);
+});
