@@ -6,6 +6,7 @@
  * NOTES
  */
  
+/* locks -> [ name:[type, locks], ] */
 var locks = new Array();
 var lockTrys = new Array();
 var myLocks = new Array();
@@ -16,6 +17,52 @@ function copyobj(arr) {
 		c[i] = arr[i];
 	}
 }
+
+function registerLockFn(ltype, fnName, fn) {
+	registerFn("locks." +ltype+"."+fnName, fn);
+}
+
+function execLockFn(family, fnName, args) {
+	ltype = locks[family].type;
+	args["locks"] = locks[family].locks;
+	return execFn("locks."+ltype+"."+fnName, args);
+}
+
+/**** Lock Functions
+ * retriveLock(details) # get lock data strict (lookup?)
+ * removeLocks(owner)
+ * isLocked(details)
+ * getLock(details) # aquire lock (aquire?)
+ * equals(a, b)
+ * lock
+ * release
+ * make?
+*/
+
+registerLockFn("basic", "lookup", 
+function (args) {
+	return args["locks"][args["name"]];
+});
+
+registerLockFn("range", "lookup",
+function (args) {
+	/******* vvvvvvvvvv *********/
+	var l = getRangeLock(struct.name, struct.start, struct.end);
+	if (l == null) 
+		error("retrieveLock for range got null");
+	return l;
+});
+
+
+/**** Logical Lock using functions
+ * grant(resp, lock
+ * deny(resp, lock
+ * handleLockReq
+ * handleLockResp
+ * lockGranted
+ * checkLocks
+ * ...
+ */
 
 function sendReqs(addr) {
 	for(ltype in lockTrys) {
@@ -95,5 +142,14 @@ function removeNodeLocks(addr) {
 
 addMsgHandler("deadNode", 
 function (resp) {
+	for(var i in testLocks) {
+		var lock = testLocks[i];
+		if (!lock)
+			continue;
+		if (lock.addr == addr) {
+			lock.locked = false;
+		}
+	}
+	
 	removeNodeLocks(resp['addr']);
 });

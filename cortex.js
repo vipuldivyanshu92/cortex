@@ -256,7 +256,12 @@ function registerFn(fnname, fn, preplace) {
 	}	
 }
 	
-
+/* Finds the chain of functions, 
+ * calls the nth
+ * stores its return
+ * calls the nth+1 with the return of the nth as well
+ * returns the results of the mth
+ */
 function execFn(name, args) {
 	root = fnreg;
 	names = name.split(".");
@@ -266,11 +271,12 @@ function execFn(name, args) {
 			return false;  // ERROR, NO FN	
 	}
 	i=0;
+	ret = true;
 	while(root[i]) {
-		root[i](args);
+		ret = root[i](args, ret);
 		i++;
 	}
-	return true;
+	return ret;
 }
 
 

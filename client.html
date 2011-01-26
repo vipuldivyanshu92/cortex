@@ -233,14 +233,14 @@ function disconnect(addr) {
 	}*/
 	// remove locks
 	// test locks
-	for(var i in testLocks) {
+	/*for(var i in testLocks) {
 		var lock = testLocks[i];
 		if (!lock)
 			continue;
 		if (lock.addr == addr) {
 			lock.locked = false;
 		}
-	}
+	}*/
 	//  range locks
 	//removeNodeRangeLocks(addr);
 
@@ -462,7 +462,7 @@ function loadTest(tname) {
 	getLock("test", tname);
 	
 }
-
+/*
 function retrieveLock(struct) {
 	if (struct.type == "test") {
 		return testLocks[struct.name];
@@ -472,7 +472,7 @@ function retrieveLock(struct) {
 			error("retrieveLock for range got null");
 		return l;
 	}
-}
+}*/
 
 function getLock(type, name, start, end) {
 	var locks = getLockType(type);
