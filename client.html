@@ -425,6 +425,7 @@ function getLockType(type) {
 		return null;
 }
 
+/*
 function isLocked(lockType, lockName, start, end) {
 	if (lockType == "range") {
 		var rlock = getRangeLock(lockname, start, end);
@@ -441,7 +442,7 @@ function isLocked(lockType, lockName, start, end) {
 			return true;
 	}
 }
-
+*/
 
 function loadTest(tname) {
 	if(tname == '') {
@@ -1066,6 +1067,7 @@ function lookForWork() {
 	}
 }
 
+/*
 function getRangeLock(name, start, end) {
 	log("getRangeLock for (" + name + " from " + start + " to " + end + ")");
 	if (!rangeLocks[name]) {
@@ -1116,6 +1118,7 @@ function getRangeLock(name, start, end) {
 	}
 	
 }
+*/
 
 function makeRangeLock(tlock, suggestedSize) {
 	suggestedSize--;
@@ -1169,6 +1172,7 @@ function makeRangeLock(tlock, suggestedSize) {
 	}
 }
 
+/*
 function genRangeCell(name, start, end, next) {
 	var c = new Object();
 	c.name = name;
@@ -1178,7 +1182,7 @@ function genRangeCell(name, start, end, next) {
 	c.locked = false;
 	c.done = false;
 	return c;
-}
+} */
 
 var map_test = null;
 var reduce = null;

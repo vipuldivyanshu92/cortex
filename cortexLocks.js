@@ -29,9 +29,9 @@ function execLockFn(family, fnName, args) {
 }
 
 /**** Lock Functions
- * retriveLock(details) # get lock data strict (lookup?)
- * removeLocks(owner)
- * isLocked(details)
+ * BR retriveLock(details) # get lock data struct (lookup?)
+ * BR removeLocks(addr/owner)
+ * BR isLocked(details)
  * getLock(details) # aquire lock (aquire?)
  * equals(a, b)
  * lock
@@ -44,14 +44,125 @@ function (args) {
 	return args["locks"][args["name"]];
 });
 
+function genRangeCell(name, start, end, next) {
+	var c = new Object();
+	c.name = name;
+	c.start=start;
+	c.end = end;
+	c.next = next;
+	c.locked = false;
+	c.done = false;
+	return c;
+}
+
+function getRangeLock(rangeLocks, name, start, end) {
+	log("getRangeLock for (" + name + " from " + start + " to " + end + ")");
+	if (!rangeLocks[name]) {
+		log("no locks for " + name + ", so MAKING");
+		rangeLocks[name] = genRangeCell(name, start, end);
+		return rangeLocks[name];
+	} 
+	log("locks exist for " + name + " so SEARCHING forward");
+	var rlock = rangeLocks[name];
+	
+	if(end < rlock.start) {
+		log("Space before first lock, MAKING HERE");
+		rangeLocks[name] = genRangeCell(name, start, end);
+		rangeLocks[name].next = rlock;
+		return rangeLocks[name];
+	}
+	
+	while(rlock.next && rlock.start < rlock.end+1) {
+		log("looking at (" + rlock.start + " to " + rlock.end + ")");
+		if (rlock.start == start && rlock.end == end) {
+			log("FOUND IT");
+			return rlock;
+		}
+		
+		if (rlock.end < start && rlock.next.start > end) {
+			log("GAP between (" + rlock.start + " to " + rlock.end + ") and (" + rlock.next.start + " to " + rlock.next.end + ") where we should be so MAKING THERE");
+			var nlock = rlock.next;
+			rlock.next = genRangeCell(name, start, end);
+			rlock.next.next = nlock;
+			return rlock.next;
+		}
+		
+		rlock = rlock.next;
+	}
+	log("SEARCH ended");
+	if (rlock.start == start && rlock.end == end) {
+		log("Found it!");	
+		return rlock;
+	} else {
+		if (rlock.end < start) {
+			log("There is space at the end to make what we want");
+			rlock.next = genRangeCell(name, start, end);
+			return rlock.next;
+		} else {
+			log("search ended after what we wanted, FAIL");
+			return null;
+		}
+	}
+	
+}
+
 registerLockFn("range", "lookup",
 function (args) {
-	/******* vvvvvvvvvv *********/
-	var l = getRangeLock(struct.name, struct.start, struct.end);
+	var l = getRangeLock(arg['locks'] , args['name'], args['start'], args'[end']);
 	if (l == null) 
 		error("retrieveLock for range got null");
 	return l;
 });
+
+
+registerLockFn("basic", "isLocked",
+function(args) {
+	var locks = args['locks'];
+	if (locks[args['name']] == null)
+		return false;
+	else 
+		return locks[args['name']].locked;
+});
+	
+registerLockFn("range", "isLocked",
+function (args) {
+	var rlock = getRangeLock(args['locks'], args['name'], args['start'], args['end']);
+	if (rlock)
+		return rlock.locked;
+	else 
+		return false;
+});
+
+
+registerLockFn("basic", "removeLocks",
+function(args) {
+	for(var i in args['locks']) {
+		var lock = args['locks'][i];
+		if (!lock)
+			continue;
+		if (lock.addr == addr) {
+			lock.locked = false;
+		}
+	}
+});
+
+
+registerLockFn("range", "removeLocks",
+function(args) {
+	for(var i in args['locks']) {
+		log("freeing " + i + " locks");
+		var rlock = args['locks'][i];
+		while (rlock != null) {
+			log("looking at " + i + " (" + rlock.start + " to " + rlock.end + ") : " + rlock.addr);
+			if (rlock.addr == args['addr']) {
+				log("unlocking");
+				rlock.locked = false;
+			}
+			rlock = rlock.next;
+		}
+	}
+});
+
 
 
 /**** Logical Lock using functions
@@ -109,7 +220,7 @@ function handleAddLock(resp) {
 		}
 	} else if(resp['type'] == "range" && lock.addr == null) {
 		log("Add range lock: " + resp['name'] + " (" + resp['start'] + " to " + resp['end'] + ") : ");
-		var lock = getRangeLock(resp['name'], resp['start'], resp['end']);
+		var lock = getRangeLock(LOCKS, resp['name'], resp['start'], resp['end']);
 		
 		lock.addr = resp['addr'];
 		lock.locked = resp['locked'];
@@ -119,22 +230,10 @@ function handleAddLock(resp) {
 	}
 }
 
+addMessageHandler("addLock", handlerAddLock());
 
 
-function removeNodeRangeLocks(addr) {
-	for(var i in rangeLocks) {
-		log("freeing " + i + " locks");
-		var rlock = rangeLocks[i];
-		while (rlock != null) {
-			log("looking at " + i + " (" + rlock.start + " to " + rlock.end + ") : " + rlock.addr);
-			if (rlock.addr == addr) {
-				log("unlocking");
-				rlock.locked = false;
-			}
-			rlock = rlock.next;
-		}
-	}
-}
+
 
 function removeNodeLocks(addr) {
 	removeNodeRangeLocks(resp['addr']);
@@ -142,14 +241,7 @@ function removeNodeLocks(addr) {
 
 addMsgHandler("deadNode", 
 function (resp) {
-	for(var i in testLocks) {
-		var lock = testLocks[i];
-		if (!lock)
-			continue;
-		if (lock.addr == addr) {
-			lock.locked = false;
-		}
-	}
+	BASIC
 	
 	removeNodeLocks(resp['addr']);
 });
