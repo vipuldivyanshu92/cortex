@@ -51,87 +51,12 @@ var runTry = null;
 
 
 
-/*
-
-function sendLocks(addr) {
-	for (var i in testLocks) {
-		log ("testLog[" + i + "]");
-		var l = testLocks[i];
-		var m = new Object();
-		
-		m["query"] = "addLock";
-		m["type"] = "test";
-		m["name"] = l["name"];
-		m["addr"] = l["addr"];
-		m["locked"] = l["locked"];
-		m["perjob"] =
-		
-			
-		m["time"] = l["time"];
-		if (l.running) {
-			m["running"] = true;
-			m["min"] = l["min"];
-			m["max"] = l["max"];
-			m["perjob"] = l["perjob"];
-		}
-		sendMsg(m, addr);
-	}
-	for (var i in rangeLocks) {
-		var r = rangeLocks[i];
-		while(r) {
-			log("rangeLock[" + i +" [" + r.start + "-" + r.end +"]]");
-			var m = new Object();
-			m["query"] = "addLock";
-			m["type"] = "range";
-			m["name"] = i;
-			m["addr"] = r["addr"]
-			m["locked"] = r["locked"];
-			m["start"] = r["start"];
-			m["end"] = r["end"];
-			m["done"] = r["done"];
-			if (r['results'])
-				m["results"] = r["results"];
-			
-			sendMsg(m, addr);
-			r = r.next;
-		}
-	}
-} */
-
 function sendTests(addr) {
 	for(var i in tests) {
 		var m = makeTestMsg(name);
 		sendMsg(m, addr);
 	}
 }
-
-/*
-function handleAddLock(resp) {
-	if(resp['locked'] == null) 
-			resp['locked'] = false;
-	// dont add/overwrite if exists?		
-	var lock = retrieveLock(resp);
-		
-	if (resp['type'] == "test" ) {//&& (lock == null || lock.addr == null)) {
-		var locks = getLockType(resp['type']);
-		
-		
-		locks[resp['name']] = resp
-		if(resp['running'] == true) {
-			runningTests.push(resp['name']);
-		}
-	} else if(resp['type'] == "range" && lock.addr == null) {
-		log("Add range lock: " + resp['name'] + " (" + resp['start'] + " to " + resp['end'] + ") : ");
-		var lock = getRangeLock(resp['name'], resp['start'], resp['end']);
-		
-		lock.addr = resp['addr'];
-		lock.locked = resp['locked'];
-		lock.done = resp['done'];
-		lock.results = resp['results'];
-		lock.name = resp['name'];
-	}
-}
-*/
 
 function packArray(arr) {
 	if (arr instanceof Object) {
@@ -202,51 +127,6 @@ function packResults(res) {
 	}
 	return str;
 }
-
-
-/*
-function removeNodeRangeLocks(addr) {
-	for(var i in rangeLocks) {
-		log("freeing " + i + " locks");
-		var rlock = rangeLocks[i];
-		while (rlock != null) {
-			log("looking at " + i + " (" + rlock.start + " to " + rlock.end + ") : " + rlock.addr);
-			if (rlock.addr == addr) {
-				log("unlocking");
-				rlock.locked = false;
-			}
-			rlock = rlock.next;
-		}
-	}
-}
-*/
-
-function disconnect(addr) {
-/*	log("--------------DISCONNECT " + addr + "----------");
-	// remove from connections list
-	for (var i=0; i < connections.length; i++) {
-		if (connections[i] == addr) {
-			connections.splice(i,1);
-			numberOfNodes--;
-			break;
-		}
-	}*/
-	// remove locks
-	// test locks
-	/*for(var i in testLocks) {
-		var lock = testLocks[i];
-		if (!lock)
-			continue;
-		if (lock.addr == addr) {
-			lock.locked = false;
-		}
-	}*/
-	//  range locks
-	//removeNodeRangeLocks(addr);
-
-	log("disconnect: freeing range locks");	
-}
-
 
 
 function encodeStr(str) {
@@ -425,24 +305,6 @@ function getLockType(type) {
 		return null;
 }
 
-/*
-function isLocked(lockType, lockName, start, end) {
-	if (lockType == "range") {
-		var rlock = getRangeLock(lockname, start, end);
-		if (rlock)
-			return rlock.locked;
-		else return false;
-	} else {
-		var locks = getLockType(lockType);
-		if (locks[lockName] == null)
-			return false;
-		else if(locks[lockName].locked != true)
-			return false;
-		else
-			return true;
-	}
-}
-*/
 
 function loadTest(tname) {
 	if(tname == '') {
@@ -462,68 +324,6 @@ function loadTest(tname) {
 	
 	getLock("test", tname);
 	
-}
-/*
-function retrieveLock(struct) {
-	if (struct.type == "test") {
-		return testLocks[struct.name];
-	} else if(struct.type == "range") {
-		var l = getRangeLock(struct.name, struct.start, struct.end);
-		if (l == null) 
-			error("retrieveLock for range got null");
-		return l;
-	}
-}*/
-
-function getLock(type, name, start, end) {
-	var locks = getLockType(type);
-	var lockTry;
-	
-	if (type == "test") {
-		if(locks[name] == null) {
-			locks[name] = new Object();
-		}
-		lockTry = locks[name];
-	} else if (type == "range") {
-		lockTry = getRangeLock(name, start, end);
-		if (!lockTry) {
-			error("Cannot get range lock in getLock(" + name +", "+ start + ", " + end + ")");
-			return;
-		}
-	}
-	
-	
-	lockTry.time = getTime();
-	lockTry.dlc = dlc+1;
-	lockTry.name = name;
-	lockTry.addr = localNodeAddr;
-	lockTry.type = type;
-	lockTry.okay = 1;
-	lockTry.locked = false;
-	var d = new Date();
-	lockTry.localTime = d.getTime();
-	
-	if (type == "test") {
-		lockTrys[type] = lockTry;
-		setTestStatus("Acquiring lock for test '" + name + "' " + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
-	} else if (type == "range") {
-		lockTrys[type] = lockTry;
-		setWorkStatus("Acquiring lock for work '" + name + "' (" + lockTry.start + " to " + lockTry.end + ")" + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
-	} 
-	
-	
-	
-	var m = new Object();
-	m["query"] = "getLock";
-	m["type"] = type;
-	m["name"] = name;
-	m["time"] = lockTry.time;
-	m["addr"] = localNodeAddr;
-	if (type == "range") {
-		m["start"] = start;
-		m["end"] = end;
-	}
-	bcastMsg(m);
 }
 
 function lessTime(t1, t2) {
@@ -562,28 +362,6 @@ function cameFirst(a, b) {
 		return false;
 	}
 
-}
-
-function locksEqual(a, b) {
-	if(a == null || b == null)
-		return false;
-	if(a['type'] != b['type'])
-		return false;
-	if(a['type'] == 'test') {
-		if (a.name == b.name)
-			return true;
-		else
-			return false;
-	} else if (a['type'] == "range") {
-		log("locksEqual? " + a.name + " (" + a.start + " to " + a.end + ") and " + b.name + " (" + b.start + " to " + b.end + ")");
-		if (a.name == b.name && a.start == b.start && a.end == b.end) {
-			log("true");
-			return true;
-		} else {
-			log("false");
-			return false;
-		}
-	}
 }
 
 
@@ -1066,59 +844,6 @@ function lookForWork() {
 		setWorkStatus("No work available (no running tests)");
 	}
 }
-
-/*
-function getRangeLock(name, start, end) {
-	log("getRangeLock for (" + name + " from " + start + " to " + end + ")");
-	if (!rangeLocks[name]) {
-		log("no locks for " + name + ", so MAKING");
-		rangeLocks[name] = genRangeCell(name, start, end);
-		return rangeLocks[name];
-	} 
-	log("locks exist for " + name + " so SEARCHING forward");
-	var rlock = rangeLocks[name];
-	
-	if(end < rlock.start) {
-		log("Space before first lock, MAKING HERE");
-		rangeLocks[name] = genRangeCell(name, start, end);
-		rangeLocks[name].next = rlock;
-		return rangeLocks[name];
-	}
-	
-	while(rlock.next && rlock.start < rlock.end+1) {
-		log("looking at (" + rlock.start + " to " + rlock.end + ")");
-		if (rlock.start == start && rlock.end == end) {
-			log("FOUND IT");
-			return rlock;
-		}
-		
-		if (rlock.end < start && rlock.next.start > end) {
-			log("GAP between (" + rlock.start + " to " + rlock.end + ") and (" + rlock.next.start + " to " + rlock.next.end + ") where we should be so MAKING THERE");
-			var nlock = rlock.next;
-			rlock.next = genRangeCell(name, start, end);
-			rlock.next.next = nlock;
-			return rlock.next;
-		}
-		
-		rlock = rlock.next;
-	}
-	log("SEARCH ended");
-	if (rlock.start == start && rlock.end == end) {
-		log("Found it!");	
-		return rlock;
-	} else {
-		if (rlock.end < start) {
-			log("There is space at the end to make what we want");
-			rlock.next = genRangeCell(name, start, end);
-			return rlock.next;
-		} else {
-			log("search ended after what we wanted, FAIL");
-			return null;
-		}
-	}
-	
-}
-*/
 
 function makeRangeLock(tlock, suggestedSize) {
 	suggestedSize--;

@@ -23,18 +23,18 @@ function registerLockFn(ltype, fnName, fn) {
 }
 
 function execLockFn(family, fnName, args) {
+	args["family"] = family;
 	ltype = locks[family].type;
 	args["locks"] = locks[family].locks;
 	return execFn("locks."+ltype+"."+fnName, args);
 }
 
 /**** Lock Functions
- * BR retriveLock(details) # get lock data struct (lookup?)
- * BR removeLocks(addr/owner)
+ * BR lookup(details) # get lock data struct (lookup?)
+ * BR remove(addr/owner)
  * BR isLocked(details)
- * getLock(details) # aquire lock (aquire?)
- * equals(a, b)
- * lock
+ * BR aquire(details) # aquire lock (aquire?)
+ * BR equals(a, b)
  * release
  * make?
 */
@@ -134,7 +134,7 @@ function (args) {
 });
 
 
-registerLockFn("basic", "removeLocks",
+registerLockFn("basic", "remove",
 function(args) {
 	for(var i in args['locks']) {
 		var lock = args['locks'][i];
@@ -147,7 +147,7 @@ function(args) {
 });
 
 
-registerLockFn("range", "removeLocks",
+registerLockFn("range", "remove",
 function(args) {
 	for(var i in args['locks']) {
 		log("freeing " + i + " locks");
@@ -163,6 +163,113 @@ function(args) {
 	}
 });
 
+function genLockTry(lockTry) {	
+	lockTry.time = getTime();
+	lockTry.dlc = dlc+1;
+	lockTry.name = name;
+	lockTry.addr = localNodeAddr;
+	lockTry.type = type;
+	lockTry.okay = 1;
+	lockTry.locked = false;
+	var d = new Date();
+	lockTry.localTime = d.getTime();
+}
+
+function genGetLockMsg() {
+	var m = new Object();
+	m["query"] = "getLock";
+	m["time"] = lockTry.time;
+	m["addr"] = localNodeAddr;
+	return m;
+}
+
+registerLockFn("basic", "aquire",
+function(args) { 
+	var locks = args['locks'];
+	var name = args['name'];
+	var lockTry;
+	
+	if(locks[name] == null) {
+		locks[name] = new Object();
+	}
+	lockTry = locks[name];
+
+	genLockTry(lockTry);
+
+	lockTrys[args['family']] = lockTry;
+	setTestStatus("Acquiring lock for test '" + name + "' " + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
+	
+	var m = getLockMsg();
+	m["name"] = name;	
+	m["type"] = "basic";
+
+	bcastMsg(m);
+});
+
+registerLockFn("range", "aquire",
+function(args) { 
+	var name = args['name'];
+	var start = args['start'];
+	var end = args['end'];
+
+	lockTry = getRangeLock(args['locks'], name, start, end);
+	if (!lockTry) {
+		error("Cannot get range lock in getLock(" + name +", "+ start + ", " + end + ")");
+		return;
+	}
+	
+	genLockTry(lockTry);	
+
+	lockTrys[args['family']] = lockTry;
+	setWorkStatus("Acquiring lock for work '" + name + "' (" + lockTry.start + " to " + lockTry.end + ")" + lockTry.okay + "/" + numberOfNodes + "...", "yellow");
+
+	var m = getLockMsg();
+	m["name"] = name;	
+	m["type"] = "range";
+
+	
+	m["start"] = start;
+	m["end"] = end;
+
+	bcastMsg(m);	
+});
+
+function lockTypesEqual(a, b) {
+	if(a == null || b == null)
+		return false;
+	if(a['type'] != b['type'])
+		return false;
+	return true;
+}
+
+registerLockFn("basic", "equals",
+function(args) { // locksEqual(a, b) 
+	var a = args['a'];
+	var b = arbs['b'];
+	if (!lockTypesEqual(a, b)) 
+		return false;
+	if (a.name == b.name)
+		return true;
+	else
+		return false;
+});
+
+registerLockFn("range", "equals",
+function(args) { // locksEqual(a, b) 
+	var a = args['a'];
+	var b = arbs['b'];
+	if (!lockTypesEqual(a, b)) 
+		return false;
+
+	log("locksEqual? " + a.name + " (" + a.start + " to " + a.end + ") and " + b.name + " (" + b.start + " to " + b.end + ")");
+	if (a.name == b.name && a.start == b.start && a.end == b.end) {
+		log("true");
+		return true;
+	} else {
+		log("false");
+		return false;
+	}
+});
 
 
 /**** Logical Lock using functions
