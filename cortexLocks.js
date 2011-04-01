@@ -6,10 +6,11 @@
  * NOTES
  */
  
-/* locks -> [ name:[type, locks], ] */
+/* locks -> [ class: [type, locks], ] */
 var locks = new Array();
-var lockTrys = new Array();
-var myLocks = new Array();
+/* -> [ class : lock] (you can only req/acq 1 lock per class */
+var locksReq = new Array();
+var locksAcq = new Array();
 
 function copyobj(arr) {
 	c = new Object();
@@ -18,40 +19,69 @@ function copyobj(arr) {
 	}
 }
 
+function locksClassType(klass) {
+	return locks[klass]['type'];
+}
+
+function locksClassLocks(klass) {
+	return locks[klass]['locks'];
+}
+
 function registerLockFn(ltype, fnName, fn) {
 	registerFn("locks." +ltype+"."+fnName, fn);
 }
+/*
+function execLockFn(fnName, args) {
+	type = locksClassType(args['class']);
+	args['type'] = type;
+	locks = locksClassLocks(args['class']);
+	args['locks'] = locks;
+	return execFn("locks."+type+"."+fnName, args);
+}*/
 
-function execLockFn(family, fnName, args) {
-	args["family"] = family;
-	ltype = locks[family].type;
-	args["locks"] = locks[family].locks;
-	return execFn("locks."+ltype+"."+fnName, args);
+function locksInitClass(klass, type) {
+	locks[klass]['type'] = type;
+	locks[klass]['locks'] = new Array();
+	
+	locksReq[klass] = new Array();
+	locksAcq[klass] = new Array();
 }
 
-/**** Lock Functions
- * BR lookup(details) # get lock data struct (lookup?)
- * BR remove(addr/owner)
- * BR isLocked(details)
- * BR aquire(details) # aquire lock (aquire?)
- * BR equals(a, b)
- * release
- * make?
+
+
+/**** Core Lock Functions
+ * get(table, info) BR -> getLock
+ * equal(a, b) - > locksEqual
+ * ?msg(lock)
 */
 
-registerLockFn("basic", "lookup", 
+function getLock(info) {
+	type = locksClassType(info['class']);
+	info['type'] = type;
+	locks = locksClassLocks(info['class']);
+	info['locks'] = locks;
+	return execFn("locks."+type+".get", info);
+}
+
+registerLockFn("basic", "get", 
 function (args) {
-	return args["locks"][args["name"]];
+	lock = args['locks'][args['name']];
+	if ( ! lock.name) {
+		lock.name =args['name'];
+		lock.locked = false;
+		lock.type = 'basic';
+	}
+	return lock;
 });
 
 function genRangeCell(name, start, end, next) {
 	var c = new Object();
 	c.name = name;
+	c.type = 'range';
 	c.start=start;
 	c.end = end;
 	c.next = next;
 	c.locked = false;
-	c.done = false;
 	return c;
 }
 
@@ -106,7 +136,7 @@ function getRangeLock(rangeLocks, name, start, end) {
 	
 }
 
-registerLockFn("range", "lookup",
+registerLockFn("range", "get",
 function (args) {
 	var l = getRangeLock(arg['locks'] , args['name'], args['start'], args'[end']);
 	if (l == null) 
@@ -114,25 +144,71 @@ function (args) {
 	return l;
 });
 
-
-registerLockFn("basic", "isLocked",
-function(args) {
-	var locks = args['locks'];
-	if (locks[args['name']] == null)
+function lockTypesEqual(a, b) {
+	if(a == null || b == null)
 		return false;
-	else 
-		return locks[args['name']].locked;
+	if(a['type'] != b['type'])
+		return false;
+	return true;
+}
+
+registerLockFn("basic", "equals",
+function(args) { // locksEqual(a, b) 
+	var a = args['a'];
+	var b = arbs['b'];
+	if (!lockTypesEqual(a, b)) 
+		return false;
+	if (a.name == b.name)
+		return true;
+	else
+		return false;
 });
+
+registerLockFn("range", "equals",
+function(args) { // locksEqual(a, b) 
+	var a = args['a'];
+	var b = arbs['b'];
+	if (!lockTypesEqual(a, b)) 
+		return false;
+
+	log("locksEqual? " + a.name + " (" + a.start + " to " + a.end + ") and " + b.name + " (" + b.start + " to " + b.end + ")");
+	if (a.name == b.name && a.start == b.start && a.end == b.end) {
+		log("true");
+		return true;
+	} else {
+		log("false");
+		return false;
+	}
+});
+
+functions locksEqual(a, b) {
+	args = new Array();
+	args['a'] = a;
+	args['b'] = b;
+	return execFn("locks."+a['type']+".equals", args);
+}
+
 	
-registerLockFn("range", "isLocked",
-function (args) {
-	var rlock = getRangeLock(args['locks'], args['name'], args['start'], args['end']);
-	if (rlock)
-		return rlock.locked;
-	else 
-		return false;
-});
+/*** Non Networked Lock functions
+ * lock
+ * release
+ * isLocked
+ * removeLocks
+ */
 
+function isLocked(lock) {
+	return lock.locked;
+}
+
+function lock(lock) {
+	lock['locked'] = true;
+}
+
+function release(lock) {
+	lock['locked'] = false;
+}
+
+/************** REVIEW HERE ******************/
 
 registerLockFn("basic", "remove",
 function(args) {
@@ -183,7 +259,44 @@ function genGetLockMsg() {
 	return m;
 }
 
-registerLockFn("basic", "aquire",
+
+
+
+
+
+registerLockFn("basic", "release",
+function (args) {
+	var lock = myLocks[type];
+	myLocks[type] = null;
+	
+	lock.locked = false;
+	
+	
+	var m = new Object();
+	m["query"] = "releaseLock";
+	m["type"] = type;
+	m["name"] = lock.name;
+	if (type == "range") {
+		m["start"] = lock.start;
+		m["end"] = lock.end;
+	}
+		
+	bcastMsg(m);
+}
+
+
+/**** Netowkr Lock using functions
+ * aquire
+ * grant(resp, lock
+ * deny(resp, lock
+ * handleLockReq
+ * handleLockResp
+ * lockGranted
+ * checkLocks
+ * ...
+ */
+ 
+ registerLockFn("basic", "aquire",
 function(args) { 
 	var locks = args['locks'];
 	var name = args['name'];
@@ -233,54 +346,6 @@ function(args) {
 
 	bcastMsg(m);	
 });
-
-function lockTypesEqual(a, b) {
-	if(a == null || b == null)
-		return false;
-	if(a['type'] != b['type'])
-		return false;
-	return true;
-}
-
-registerLockFn("basic", "equals",
-function(args) { // locksEqual(a, b) 
-	var a = args['a'];
-	var b = arbs['b'];
-	if (!lockTypesEqual(a, b)) 
-		return false;
-	if (a.name == b.name)
-		return true;
-	else
-		return false;
-});
-
-registerLockFn("range", "equals",
-function(args) { // locksEqual(a, b) 
-	var a = args['a'];
-	var b = arbs['b'];
-	if (!lockTypesEqual(a, b)) 
-		return false;
-
-	log("locksEqual? " + a.name + " (" + a.start + " to " + a.end + ") and " + b.name + " (" + b.start + " to " + b.end + ")");
-	if (a.name == b.name && a.start == b.start && a.end == b.end) {
-		log("true");
-		return true;
-	} else {
-		log("false");
-		return false;
-	}
-});
-
-
-/**** Logical Lock using functions
- * grant(resp, lock
- * deny(resp, lock
- * handleLockReq
- * handleLockResp
- * lockGranted
- * checkLocks
- * ...
- */
 
 function sendReqs(addr) {
 	for(ltype in lockTrys) {
