@@ -782,24 +782,6 @@ function handleTestUpdate(resp) {
 	tests[resp['name']]['reducefn'] = decodeStr(resp["reducefn"]);
 }
 
-function releaseLock(type) {
-	var lock = myLocks[type];
-	myLocks[type] = null;
-	
-	lock.locked = false;
-	
-	
-	var m = new Object();
-	m["query"] = "releaseLock";
-	m["type"] = type;
-	m["name"] = lock.name;
-	if (type == "range") {
-		m["start"] = lock.start;
-		m["end"] = lock.end;
-	}
-		
-	bcastMsg(m);
-}
 
 function handleLockRelease(resp) {
 	//var locks = getLockType(resp['type']);
