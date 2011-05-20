@@ -1,5 +1,6 @@
 Cortex: P2P in JavaScript
 Dan Ballard (2010-2011) <dan@mindstab.net>
+cortex.mindstab.net
 
 Cortex is a P2P framework that runs without installation in your web browser. It's one small part Java Applet (HTTP server) and one large part JavaScript. The JavaScript is all the P2P networking code and utilities you need to get off the ground and go.
 
